@@ -22,6 +22,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            requirements-test.txt
 
       - name: Install dependencies
         run: |
@@ -46,3 +49,7 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # The logo lives in a separate repo (home-assistant/brands) and is
+          # submitted there once, after the integration is published. Until that
+          # PR is merged the brands check fails, so ignore it for now.
+          ignore: brands
