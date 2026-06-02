@@ -14,10 +14,16 @@ import pytest
 
 pytest.importorskip("pytest_homeassistant_custom_component")
 
+from datetime import timedelta  # noqa: E402
+
 from homeassistant.const import ATTR_ENTITY_ID  # noqa: E402
 from homeassistant.core import HomeAssistant, callback  # noqa: E402
 from homeassistant.helpers import entity_registry as er  # noqa: E402
-from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: E402
+from homeassistant.util import dt as dt_util  # noqa: E402
+from pytest_homeassistant_custom_component.common import (  # noqa: E402
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.circadian_oio.const import (  # noqa: E402
     CONF_WRAPPED_DEVICES,
@@ -27,6 +33,8 @@ from custom_components.circadian_oio.const import (  # noqa: E402
     MIN_CCT,
     MAX_CCT_DAY,
     RENDER_TRANSITION_SECONDS,
+    UPDATE_INTERVAL_SECONDS,
+    USER_TRANSITION_SECONDS,
 )
 
 
@@ -93,12 +101,51 @@ async def test_turn_on_drives_underlying_with_brightness_and_cct(
     call = downstream[-1]
     assert MIN_BRIGHTNESS <= call["brightness"] <= MAX_BRIGHTNESS
     assert MIN_CCT <= call["color_temp_kelvin"] <= MAX_CCT_DAY
-    assert call["transition"] == RENDER_TRANSITION_SECONDS
+    # A direct user action fades fast, not over the slow time-of-day window.
+    assert call["transition"] == USER_TRANSITION_SECONDS
 
     # The wrapper should report the user's intent back, not the rendered value.
     state = hass.states.get(wrapper_id)
     assert state.state == "on"
     assert state.attributes["brightness"] == 200
+
+
+async def test_periodic_tick_uses_long_transition(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """The once-a-minute time-of-day re-render fades slowly; a user action does
+    not. This is the regression guard for the 'bulb lags the slider' bug."""
+    device_id, underlying = oio_device
+    await _setup_entry(hass, device_id)
+    wrapper_id = _wrapper_entity_id(hass, device_id)
+
+    downstream: list[dict] = []
+
+    @callback
+    def _record(event):
+        data = event.data
+        if data.get("domain") == "light" and data.get("service") == "turn_on":
+            service_data = data.get("service_data", {})
+            if service_data.get(ATTR_ENTITY_ID) == underlying:
+                downstream.append(service_data)
+
+    hass.bus.async_listen("call_service", _record)
+
+    # User turns it on: fast fade.
+    await hass.services.async_call(
+        "light", "turn_on", {ATTR_ENTITY_ID: wrapper_id}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert downstream[-1]["transition"] == USER_TRANSITION_SECONDS
+
+    # Advance the clock past the update interval to fire the periodic tick.
+    async_fire_time_changed(
+        hass, dt_util.utcnow() + timedelta(seconds=UPDATE_INTERVAL_SECONDS + 1)
+    )
+    await hass.async_block_till_done()
+
+    assert len(downstream) >= 2, "periodic tick never re-rendered"
+    assert downstream[-1]["transition"] == RENDER_TRANSITION_SECONDS
 
 
 async def test_turn_off_routes_to_underlying(

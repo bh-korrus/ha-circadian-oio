@@ -43,7 +43,7 @@ By hiding the underlying entity we make the wrapper the only interface. The few 
 
 A natural alternative is to render only on user input. This would be simpler but breaks the central promise: a bulb left at 80% in the afternoon will not get dimmer and warmer as the evening approaches without anyone touching it. The whole point of the integration is that the bulb tracks time.
 
-A 60-second tick is a coarse-enough resolution that it's not wasteful (one HA service call per minute per wrapped bulb is cheap) and fine-enough resolution that 30-minute transitions look smooth — 30 update steps over the transition window, with `transition: 50` on each call so the bulb fades between steps rather than stepping discretely.
+A 60-second tick is a coarse-enough resolution that it's not wasteful (one HA service call per minute per wrapped bulb is cheap) and fine-enough resolution that 30-minute transitions look smooth — 30 update steps over the transition window, with `transition: 50` on each tick call so the bulb fades between steps rather than stepping discretely. Direct user actions are a separate path: they re-render with a short `transition` (1 s) so the bulb tracks the slider instead of lagging it by the full 50-second tick fade.
 
 ## Why L\* perceptual brightness
 

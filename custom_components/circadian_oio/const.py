@@ -57,9 +57,16 @@ EVENING_MAX_CCT = 2700                  # post-sunset, pre-late-night CCT cap
 # bulb. One minute is fine for 30-minute transitions; smaller is wasteful.
 UPDATE_INTERVAL_SECONDS = 60
 
-# Smoothing applied to underlying light.turn_on calls (seconds). Roughly matches
-# the update interval so transitions chain together visually.
+# Smoothing applied to the periodic time-of-day re-render (seconds). Roughly
+# matches the update interval so the slow drift across cap shifts chains
+# together into a continuous fade rather than visible once-a-minute steps.
 RENDER_TRANSITION_SECONDS = 50
+
+# Smoothing applied when the user (or a script/voice/Pico) actively changes the
+# slider. This must be short or the bulb appears to lag the control by the full
+# RENDER_TRANSITION_SECONDS. A small non-zero value keeps the move smooth
+# without feeling sluggish.
+USER_TRANSITION_SECONDS = 1
 
 # Where in the intent space [0-100] each phase lives. Phase A is the sub-curve
 # CCT-only walk below the brightness floor; Phase B is the brightness ramp with

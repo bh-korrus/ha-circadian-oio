@@ -28,6 +28,7 @@ from .const import (
     MIN_BRIGHTNESS,
     RENDER_TRANSITION_SECONDS,
     UPDATE_INTERVAL_SECONDS,
+    USER_TRANSITION_SECONDS,
 )
 from .render import render
 
@@ -134,9 +135,10 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
             )
         )
 
-        # Push the current intent to the bulb on startup (if on).
+        # Push the current intent to the bulb on startup (if on). Settle quickly
+        # rather than crawling in over the long time-of-day transition.
         if self._is_on:
-            await self._apply()
+            await self._apply(USER_TRANSITION_SECONDS)
 
     # --- LightEntity surface --------------------------------------------------
 
@@ -154,7 +156,9 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         if ATTR_BRIGHTNESS in kwargs:
             self._intent = (kwargs[ATTR_BRIGHTNESS] / 255.0) * 100.0
         self._is_on = True
-        await self._apply()
+        # A direct user/script/voice change should track the control, not crawl
+        # in over the slow time-of-day transition.
+        await self._apply(USER_TRANSITION_SECONDS)
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -171,12 +175,18 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
 
     @callback
     def _handle_tick(self, _now) -> None:
-        """Periodic re-render; fire-and-forget."""
+        """Periodic re-render; fire-and-forget. Uses the long transition so the
+        time-of-day drift fades smoothly between ticks."""
         if self._is_on and not self._applying:
-            self.hass.async_create_task(self._apply())
+            self.hass.async_create_task(self._apply(RENDER_TRANSITION_SECONDS))
 
-    async def _apply(self) -> None:
-        """Compute and push (brightness, CCT) to the underlying bulb."""
+    async def _apply(self, transition: float) -> None:
+        """Compute and push (brightness, CCT) to the underlying bulb.
+
+        transition is the fade time handed to the underlying light: short for
+        direct user actions, long (RENDER_TRANSITION_SECONDS) for the periodic
+        time-of-day re-render.
+        """
         self._applying = True
         try:
             now = dt_util.now()
@@ -198,7 +208,7 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
                     "entity_id": self._underlying_entity_id,
                     "brightness": brightness,
                     "color_temp_kelvin": cct,
-                    "transition": RENDER_TRANSITION_SECONDS,
+                    "transition": transition,
                 },
                 blocking=False,
             )

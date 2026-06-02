@@ -106,7 +106,7 @@ These are choices we made deliberately. If something seems wrong, check here bef
 
 5. **L\* in `[8, 100]` uses the cubic formula; below 8 uses the linear regime.** Both branches are in `lstar_from_y` / `y_from_lstar`. The transition is smooth at L\* = 8 (Y = 0.008856). Don't simplify to just the cubic — at our extended low end we're operating in the linear region.
 
-6. **`transition: 50` on every render call.** Matches the 60-second tick so consecutive updates chain together visually into a smooth fade rather than discrete jumps. Don't drop this without also dropping the tick interval; otherwise transitions during cap shifts will look stepped.
+6. **Two transition times: long for the tick, short for user actions.** The once-a-minute time-of-day re-render uses `RENDER_TRANSITION_SECONDS` (50 s), which roughly matches the tick interval so the slow drift across cap shifts chains into a continuous fade rather than visible once-a-minute steps. A direct user/script/voice/Pico change uses `USER_TRANSITION_SECONDS` (1 s) so the bulb tracks the control instead of crawling in over ~50 s. `_apply()` takes the transition as an argument; `async_turn_on` and the startup restore pass the short value, `_handle_tick` passes the long one. Don't collapse these back into a single value — applying the long transition to user actions is exactly the "bulb lags the slider by a minute" bug. If you change the tick interval, keep `RENDER_TRANSITION_SECONDS` near it.
 
 7. **Manufacturer filter is case-insensitive substring match.** Matter VendorName fields can vary ("Korrus", "Korrus Inc.", "Ecosense / Korrus"). The substring approach is forgiving. Strings live in `const.KORRUS_MANUFACTURER_MATCHES` and are easy to extend.
 
