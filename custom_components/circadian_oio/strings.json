@@ -1,0 +1,27 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Wrap OIO bulbs",
+        "description": "Select which OIO bulbs to wrap with the circadian render layer. Each wrapped bulb will appear as a single-axis dimmer; the underlying physical light will be hidden.",
+        "data": {
+          "wrapped_devices": "OIO bulbs to wrap"
+        }
+      }
+    },
+    "abort": {
+      "no_oio_devices": "No OIO bulbs found. Make sure your bulbs are added via Matter and report a Korrus/OIO manufacturer string.",
+      "single_instance_allowed": "Circadian OIO is already configured. Use the integration's Configure button to change which bulbs are wrapped."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit wrapped OIO bulbs",
+        "data": {
+          "wrapped_devices": "OIO bulbs to wrap"
+        }
+      }
+    }
+  }
+}

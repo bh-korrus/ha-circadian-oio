@@ -1,0 +1,14 @@
+{
+  "domain": "circadian_oio",
+  "name": "Circadian OIO",
+  "after_dependencies": ["sun"],
+  "codeowners": ["@bh-korrus"],
+  "config_flow": true,
+  "dependencies": ["light"],
+  "documentation": "https://github.com/bh-korrus/ha-circadian-oio",
+  "integration_type": "helper",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/bh-korrus/ha-circadian-oio/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

@@ -1,0 +1,149 @@
+"""Integration tests for the wrapper entity (light.py).
+
+These drive a real Home Assistant so the entity lifecycle and the render path
+get exercised end to end — which is where the dt_util.now() regression lived.
+Skipped automatically when HA is not installed.
+
+Run with:
+    pip install -r requirements-test.txt
+    pytest tests/
+"""
+from __future__ import annotations
+
+import pytest
+
+pytest.importorskip("pytest_homeassistant_custom_component")
+
+from homeassistant.const import ATTR_ENTITY_ID  # noqa: E402
+from homeassistant.core import HomeAssistant, callback  # noqa: E402
+from homeassistant.helpers import entity_registry as er  # noqa: E402
+from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: E402
+
+from custom_components.circadian_oio.const import (  # noqa: E402
+    CONF_WRAPPED_DEVICES,
+    DOMAIN,
+    MAX_BRIGHTNESS,
+    MIN_BRIGHTNESS,
+    MIN_CCT,
+    MAX_CCT_DAY,
+    RENDER_TRANSITION_SECONDS,
+)
+
+
+def _wrapper_entity_id(hass: HomeAssistant, device_id: str) -> str | None:
+    return er.async_get(hass).async_get_entity_id(
+        "light", DOMAIN, f"{DOMAIN}_{device_id}"
+    )
+
+
+async def _setup_entry(hass: HomeAssistant, device_id: str) -> MockConfigEntry:
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_WRAPPED_DEVICES: [device_id]})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_setup_creates_wrapper_and_hides_underlying(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """Wrapping a bulb exposes a circadian dimmer and hides the raw light."""
+    device_id, underlying = oio_device
+    await _setup_entry(hass, device_id)
+
+    wrapper_id = _wrapper_entity_id(hass, device_id)
+    assert wrapper_id is not None
+    assert hass.states.get(wrapper_id) is not None
+
+    hidden = er.async_get(hass).async_get(underlying).hidden_by
+    assert hidden == er.RegistryEntryHider.INTEGRATION
+
+
+async def test_turn_on_drives_underlying_with_brightness_and_cct(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """Turning the wrapper on must push a (brightness, color_temp_kelvin) pair
+    to the underlying bulb. This is the regression guard for the tz crash: if
+    _apply() raised, no downstream call would ever be recorded."""
+    device_id, underlying = oio_device
+    await _setup_entry(hass, device_id)
+    wrapper_id = _wrapper_entity_id(hass, device_id)
+
+    downstream: list[dict] = []
+
+    @callback
+    def _record(event):
+        data = event.data
+        if data.get("domain") == "light" and data.get("service") == "turn_on":
+            service_data = data.get("service_data", {})
+            if service_data.get(ATTR_ENTITY_ID) == underlying:
+                downstream.append(service_data)
+
+    hass.bus.async_listen("call_service", _record)
+
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {ATTR_ENTITY_ID: wrapper_id, "brightness": 200},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert downstream, "wrapper never drove the underlying light (did _apply raise?)"
+    call = downstream[-1]
+    assert MIN_BRIGHTNESS <= call["brightness"] <= MAX_BRIGHTNESS
+    assert MIN_CCT <= call["color_temp_kelvin"] <= MAX_CCT_DAY
+    assert call["transition"] == RENDER_TRANSITION_SECONDS
+
+    # The wrapper should report the user's intent back, not the rendered value.
+    state = hass.states.get(wrapper_id)
+    assert state.state == "on"
+    assert state.attributes["brightness"] == 200
+
+
+async def test_turn_off_routes_to_underlying(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """Turning the wrapper off turns the real bulb off."""
+    device_id, underlying = oio_device
+    await _setup_entry(hass, device_id)
+    wrapper_id = _wrapper_entity_id(hass, device_id)
+
+    off_calls: list[dict] = []
+
+    @callback
+    def _record(event):
+        data = event.data
+        if data.get("domain") == "light" and data.get("service") == "turn_off":
+            service_data = data.get("service_data", {})
+            if service_data.get(ATTR_ENTITY_ID) == underlying:
+                off_calls.append(service_data)
+
+    hass.bus.async_listen("call_service", _record)
+
+    await hass.services.async_call(
+        "light", "turn_on", {ATTR_ENTITY_ID: wrapper_id}, blocking=True
+    )
+    await hass.services.async_call(
+        "light", "turn_off", {ATTR_ENTITY_ID: wrapper_id}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert off_calls, "wrapper never turned the underlying light off"
+    assert hass.states.get(wrapper_id).state == "off"
+
+
+async def test_unload_restores_hidden_underlying(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """Unloading the integration un-hides the real bulb so it doesn't vanish."""
+    device_id, underlying = oio_device
+    entry = await _setup_entry(hass, device_id)
+
+    ent_reg = er.async_get(hass)
+    assert ent_reg.async_get(underlying).hidden_by == er.RegistryEntryHider.INTEGRATION
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert ent_reg.async_get(underlying).hidden_by is None

@@ -1,0 +1,9 @@
+# Full test stack: drives the entity layer and config flow against a real
+# Home Assistant via pytest-homeassistant-custom-component (PHACC).
+#
+# PHACC pins an exact Home Assistant version, so bumping HA means bumping this
+# pin. 0.13.205 tracks Home Assistant 2025.1.x and needs Python 3.12+.
+#
+# The pure render tests in requirements-dev.txt do NOT need this — they run on a
+# bare interpreter with the HA modules stubbed (see tests/conftest.py).
+pytest-homeassistant-custom-component==0.13.205
