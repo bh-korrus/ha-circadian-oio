@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 import pytest
 
 from custom_components.circadian_oio.render import (
+    DEFAULT_SETTINGS,
+    RenderSettings,
     compute_caps,
     curve_cct,
     lstar_from_y,
@@ -227,3 +229,62 @@ def test_render_perceptually_uniform_steps():
     step_1_to_2 = L2 - L1
     step_2_to_3 = L3 - L2
     assert step_1_to_2 == pytest.approx(step_2_to_3, abs=2)
+
+
+# --- Tunable settings ---------------------------------------------------------
+
+def test_default_settings_match_hardcoded_behavior():
+    """Passing DEFAULT_SETTINGS must equal the no-settings path."""
+    args = dict(now=_t(20, 45), next_sunset=None, is_day=False)
+    assert compute_caps(**args) == compute_caps(**args, settings=DEFAULT_SETTINGS)
+
+
+def test_custom_night_start_delays_the_cap():
+    """At 9 PM the default caps to 10%; pushing night start to 10 PM does not."""
+    default_b, _ = compute_caps(_t(21), next_sunset=None, is_day=False)
+    custom = RenderSettings(late_night_start_min=22 * 60)
+    custom_b, _ = compute_caps(_t(21), next_sunset=None, is_day=False, settings=custom)
+    assert default_b == 10.0
+    assert custom_b == 100.0
+
+
+def test_custom_night_end_extends_the_cap():
+    """6:30 AM is normally clear; pushing night end to 7 AM keeps it capped."""
+    custom = RenderSettings(late_night_end_min=7 * 60)
+    b, _ = compute_caps(_t(6, 30), next_sunset=None, is_day=False, settings=custom)
+    assert b == 10.0
+
+
+def test_custom_night_brightness_cap():
+    custom = RenderSettings(late_night_max_b_pct=25.0)
+    b, _ = compute_caps(_t(23), next_sunset=None, is_day=False, settings=custom)
+    assert b == 25.0
+
+
+def test_custom_transition_duration():
+    """A 60-minute lead starts the pre-night ramp an hour before night start."""
+    custom = RenderSettings(transition_lead_min=60)
+    # 8:00 PM is exactly 60 min before the 9 PM default night start.
+    b_start, _ = compute_caps(_t(20, 0), next_sunset=None, is_day=False, settings=custom)
+    assert b_start == pytest.approx(100.0, abs=0.5)
+    # 8:30 PM is halfway through the 60-min ramp.
+    b_mid, _ = compute_caps(_t(20, 30), next_sunset=None, is_day=False, settings=custom)
+    assert b_mid == pytest.approx(55.0, abs=1.0)
+
+
+def test_custom_day_max_cct_caps_render():
+    custom = RenderSettings(max_cct_day=4000)
+    brightness, cct = render(
+        100, _t(12), next_sunset=_t(20), is_day=True, settings=custom
+    )
+    assert brightness == 255
+    assert cct == 4000
+
+
+def test_zero_transition_duration_does_not_divide_by_zero():
+    """A 0-minute lead means instant cap changes, with no division blow-up."""
+    custom = RenderSettings(transition_lead_min=0)
+    # Would-be pre-night window:
+    compute_caps(_t(20, 45), next_sunset=None, is_day=False, settings=custom)
+    # Would-be pre-sunset window:
+    compute_caps(_t(19, 45), next_sunset=_t(20), is_day=True, settings=custom)

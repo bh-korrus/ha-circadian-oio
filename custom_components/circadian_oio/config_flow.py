@@ -7,16 +7,30 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TimeSelector,
 )
 
 from .const import (
+    CONF_DAY_MAX_CCT,
+    CONF_NIGHT_BRIGHTNESS_PCT,
+    CONF_NIGHT_END,
+    CONF_NIGHT_START,
+    CONF_TRANSITION_MINUTES,
     CONF_WRAPPED_DEVICES,
+    DEFAULT_NIGHT_END,
+    DEFAULT_NIGHT_START,
     DOMAIN,
     KORRUS_MANUFACTURER_MATCHES,
+    LATE_NIGHT_MAX_B_PCT,
+    MAX_CCT_DAY,
+    NINEPM_TRANSITION_LEAD_MIN,
 )
 
 
@@ -110,15 +124,24 @@ class CircadianOIOOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.ConfigFlowResult:
         devices = _discover_oio_devices(self.hass)
         current = self.entry.data.get(CONF_WRAPPED_DEVICES, [])
+        opts = self.entry.options
 
         if user_input is not None:
+            # Bulb selection lives in entry.data; the render tuning lives in
+            # entry.options. Both changes reload the entry via the listener.
             self.hass.config_entries.async_update_entry(
                 self.entry,
-                data={**self.entry.data, CONF_WRAPPED_DEVICES: user_input[CONF_WRAPPED_DEVICES]},
+                data={
+                    **self.entry.data,
+                    CONF_WRAPPED_DEVICES: user_input[CONF_WRAPPED_DEVICES],
+                },
             )
-            return self.async_create_entry(title="", data={})
+            tuning = {
+                k: v for k, v in user_input.items() if k != CONF_WRAPPED_DEVICES
+            }
+            return self.async_create_entry(title="", data=tuning)
 
-        options = [
+        device_options = [
             SelectOptionDict(value=did, label=label)
             for did, label in devices.items()
         ]
@@ -128,9 +151,57 @@ class CircadianOIOOptionsFlow(config_entries.OptionsFlow):
                     CONF_WRAPPED_DEVICES, default=current
                 ): SelectSelector(
                     SelectSelectorConfig(
-                        options=options,
+                        options=device_options,
                         multiple=True,
                         mode=SelectSelectorMode.LIST,
+                    )
+                ),
+                vol.Required(
+                    CONF_NIGHT_START,
+                    default=opts.get(CONF_NIGHT_START, DEFAULT_NIGHT_START),
+                ): TimeSelector(),
+                vol.Required(
+                    CONF_NIGHT_END,
+                    default=opts.get(CONF_NIGHT_END, DEFAULT_NIGHT_END),
+                ): TimeSelector(),
+                vol.Required(
+                    CONF_TRANSITION_MINUTES,
+                    default=opts.get(
+                        CONF_TRANSITION_MINUTES, NINEPM_TRANSITION_LEAD_MIN
+                    ),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0,
+                        max=120,
+                        step=1,
+                        unit_of_measurement="min",
+                        mode=NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Required(
+                    CONF_NIGHT_BRIGHTNESS_PCT,
+                    default=opts.get(
+                        CONF_NIGHT_BRIGHTNESS_PCT, LATE_NIGHT_MAX_B_PCT
+                    ),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=1,
+                        max=100,
+                        step=1,
+                        unit_of_measurement="%",
+                        mode=NumberSelectorMode.SLIDER,
+                    )
+                ),
+                vol.Required(
+                    CONF_DAY_MAX_CCT,
+                    default=opts.get(CONF_DAY_MAX_CCT, MAX_CCT_DAY),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=2700,
+                        max=6500,
+                        step=50,
+                        unit_of_measurement="K",
+                        mode=NumberSelectorMode.BOX,
                     )
                 ),
             }

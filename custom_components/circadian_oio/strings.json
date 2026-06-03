@@ -17,9 +17,15 @@
   "options": {
     "step": {
       "init": {
-        "title": "Edit wrapped OIO bulbs",
+        "title": "Circadian OIO settings",
+        "description": "Choose which bulbs to wrap and tune the night schedule. Leave the schedule at its defaults unless you have a reason to change it — lifting the night brightness cap or cooling the night color weakens the circadian effect.",
         "data": {
-          "wrapped_devices": "OIO bulbs to wrap"
+          "wrapped_devices": "OIO bulbs to wrap",
+          "night_start": "Night starts (dim/warm cap begins)",
+          "night_end": "Night ends (cap lifts)",
+          "transition_minutes": "Transition duration (minutes)",
+          "night_brightness_pct": "Night brightness cap (%)",
+          "day_max_cct": "Daytime max color temperature (K)"
         }
       }
     }

@@ -21,6 +21,11 @@ from homeassistant.helpers import entity_registry as er  # noqa: E402
 from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: E402
 
 from custom_components.circadian_oio.const import (  # noqa: E402
+    CONF_DAY_MAX_CCT,
+    CONF_NIGHT_BRIGHTNESS_PCT,
+    CONF_NIGHT_END,
+    CONF_NIGHT_START,
+    CONF_TRANSITION_MINUTES,
     CONF_WRAPPED_DEVICES,
     DOMAIN,
 )
@@ -122,3 +127,37 @@ async def test_options_flow_unwrap_restores_underlying(
 
     assert entry.data[CONF_WRAPPED_DEVICES] == []
     assert ent_reg.async_get(underlying).hidden_by is None
+
+
+async def test_options_flow_stores_schedule_tuning(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """The options form persists the night-schedule knobs into entry.options."""
+    device_id, _ = oio_device
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_WRAPPED_DEVICES: [device_id]})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == FlowResultType.FORM
+
+    result2 = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_WRAPPED_DEVICES: [device_id],
+            CONF_NIGHT_START: "22:30:00",
+            CONF_NIGHT_END: "06:00:00",
+            CONF_TRANSITION_MINUTES: 45,
+            CONF_NIGHT_BRIGHTNESS_PCT: 15,
+            CONF_DAY_MAX_CCT: 5000,
+        },
+    )
+    assert result2["type"] == FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    assert entry.options[CONF_NIGHT_START] == "22:30:00"
+    assert entry.options[CONF_TRANSITION_MINUTES] == 45
+    assert entry.options[CONF_DAY_MAX_CCT] == 5000
+    # Bulb selection still lives in data, untouched.
+    assert entry.data[CONF_WRAPPED_DEVICES] == [device_id]

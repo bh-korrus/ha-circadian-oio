@@ -18,6 +18,14 @@ KORRUS_MANUFACTURER_MATCHES = (
 
 CONF_WRAPPED_DEVICES = "wrapped_devices"
 
+# User-tunable options (stored in entry.options). Each falls back to the
+# matching default constant below when unset.
+CONF_NIGHT_START = "night_start"            # time string "HH:MM:SS"
+CONF_NIGHT_END = "night_end"                # time string "HH:MM:SS"
+CONF_TRANSITION_MINUTES = "transition_minutes"
+CONF_NIGHT_BRIGHTNESS_PCT = "night_brightness_pct"
+CONF_DAY_MAX_CCT = "day_max_cct"
+
 # Runtime key under hass.data[DOMAIN][entry_id]: maps each underlying entity
 # we hid to its prior hidden_by value, so it can be restored on unload.
 DATA_HIDDEN = "hidden"
@@ -45,6 +53,10 @@ LATE_NIGHT_START_MIN = 21 * 60          # 9:00 PM
 LATE_NIGHT_END_MIN = 5 * 60 + 30        # 5:30 AM
 NINEPM_TRANSITION_LEAD_MIN = 30         # transition starts 30 min before 9 PM
 SUNSET_TRANSITION_LEAD_MIN = 30         # transition starts 30 min before sunset
+
+# Same defaults as time strings, for the options form's time pickers.
+DEFAULT_NIGHT_START = "21:00:00"
+DEFAULT_NIGHT_END = "05:30:00"
 
 # --- Cap levels ---------------------------------------------------------------
 

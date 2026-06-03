@@ -38,6 +38,29 @@ from custom_components.circadian_oio.const import (  # noqa: E402
 )
 
 
+def test_settings_from_options_parses_and_defaults():
+    """The options dict maps to RenderSettings; empty options give defaults."""
+    from custom_components.circadian_oio.light import _settings_from_options
+    from custom_components.circadian_oio.render import DEFAULT_SETTINGS
+
+    s = _settings_from_options(
+        {
+            "night_start": "22:30:00",
+            "night_end": "06:15",
+            "transition_minutes": 45,
+            "night_brightness_pct": 15,
+            "day_max_cct": 5000,
+        }
+    )
+    assert s.late_night_start_min == 22 * 60 + 30
+    assert s.late_night_end_min == 6 * 60 + 15
+    assert s.transition_lead_min == 45
+    assert s.late_night_max_b_pct == 15.0
+    assert s.max_cct_day == 5000
+
+    assert _settings_from_options({}) == DEFAULT_SETTINGS
+
+
 def _wrapper_entity_id(hass: HomeAssistant, device_id: str) -> str | None:
     return er.async_get(hass).async_get_entity_id(
         "light", DOMAIN, f"{DOMAIN}_{device_id}"

@@ -21,16 +21,56 @@ from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_DAY_MAX_CCT,
+    CONF_NIGHT_BRIGHTNESS_PCT,
+    CONF_NIGHT_END,
+    CONF_NIGHT_START,
+    CONF_TRANSITION_MINUTES,
     CONF_WRAPPED_DEVICES,
     DATA_HIDDEN,
     DOMAIN,
+    LATE_NIGHT_END_MIN,
+    LATE_NIGHT_MAX_B_PCT,
+    LATE_NIGHT_START_MIN,
     MAX_BRIGHTNESS,
+    MAX_CCT_DAY,
     MIN_BRIGHTNESS,
+    NINEPM_TRANSITION_LEAD_MIN,
     RENDER_TRANSITION_SECONDS,
     UPDATE_INTERVAL_SECONDS,
     USER_TRANSITION_SECONDS,
 )
-from .render import render
+from .render import RenderSettings, render
+
+
+def _parse_hhmm_to_min(value: str | None, default_min: int) -> int:
+    """Parse a 'HH:MM' or 'HH:MM:SS' time string to minutes since midnight."""
+    if not value:
+        return default_min
+    try:
+        parts = value.split(":")
+        return int(parts[0]) * 60 + int(parts[1])
+    except (ValueError, IndexError):
+        return default_min
+
+
+def _settings_from_options(options) -> RenderSettings:
+    """Build render settings from a config entry's options, with defaults."""
+    return RenderSettings(
+        late_night_start_min=_parse_hhmm_to_min(
+            options.get(CONF_NIGHT_START), LATE_NIGHT_START_MIN
+        ),
+        late_night_end_min=_parse_hhmm_to_min(
+            options.get(CONF_NIGHT_END), LATE_NIGHT_END_MIN
+        ),
+        transition_lead_min=int(
+            options.get(CONF_TRANSITION_MINUTES, NINEPM_TRANSITION_LEAD_MIN)
+        ),
+        late_night_max_b_pct=float(
+            options.get(CONF_NIGHT_BRIGHTNESS_PCT, LATE_NIGHT_MAX_B_PCT)
+        ),
+        max_cct_day=int(options.get(CONF_DAY_MAX_CCT, MAX_CCT_DAY)),
+    )
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +85,7 @@ async def async_setup_entry(
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
     hidden: dict[str, object] = hass.data[DOMAIN][entry.entry_id][DATA_HIDDEN]
+    settings = _settings_from_options(entry.options)
 
     entities: list[CircadianOIOLight] = []
     for device_id in device_ids:
@@ -83,7 +124,7 @@ async def async_setup_entry(
             )
 
         entities.append(
-            CircadianOIOLight(hass, device, underlying_entity_id)
+            CircadianOIOLight(hass, device, underlying_entity_id, settings)
         )
 
     async_add_entities(entities)
@@ -101,10 +142,12 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         hass: HomeAssistant,
         device,
         underlying_entity_id: str,
+        settings: RenderSettings,
     ) -> None:
         self.hass = hass
         self._device = device
         self._underlying_entity_id = underlying_entity_id
+        self._settings = settings
 
         base_name = device.name_by_user or device.name or device.id
         self._attr_name = f"{base_name} (Circadian)"
@@ -215,6 +258,7 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
                 now=now,
                 next_sunset=next_sunset,
                 is_day=is_day,
+                settings=self._settings,
             )
 
             await self.hass.services.async_call(
