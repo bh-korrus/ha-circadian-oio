@@ -53,14 +53,18 @@ async def async_setup_entry(
             _LOGGER.warning("Wrapped device %s no longer exists", device_id)
             continue
 
-        # Find the underlying light entity on this device. Pick deterministically
-        # (lowest entity_id) so a multi-light device always wraps the same one.
+        # Find the underlying light entity on this device. Exclude our own
+        # wrapper entities: the wrapper shares the bulb's device_info, so on any
+        # reload it appears here too. Without this filter a wrapper whose
+        # entity_id sorts before the raw bulb's would be picked as its own
+        # "underlying" — hiding itself and driving itself in a feedback loop.
+        # Pick the lowest remaining entity_id so the choice is stable.
         light_entities = sorted(
             ent.entity_id
             for ent in er.async_entries_for_device(
                 ent_reg, device_id, include_disabled_entities=True
             )
-            if ent.entity_id.startswith("light.")
+            if ent.entity_id.startswith("light.") and ent.platform != DOMAIN
         )
         if not light_entities:
             _LOGGER.warning("Device %s has no light entity to wrap", device_id)
@@ -118,6 +122,18 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Restore intent and start the time-based render loop."""
         await super().async_added_to_hass()
+
+        # Self-heal: a pre-fix version could pick this wrapper as its own
+        # underlying on reload and hide it. If our own entity is hidden by the
+        # integration, make it visible again. (A deliberate USER hide is left
+        # alone.)
+        if (
+            self.registry_entry is not None
+            and self.registry_entry.hidden_by is er.RegistryEntryHider.INTEGRATION
+        ):
+            er.async_get(self.hass).async_update_entity(
+                self.entity_id, hidden_by=None
+            )
 
         last_state = await self.async_get_last_state()
         if last_state and last_state.state == STATE_ON:
@@ -214,11 +230,12 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
             )
 
             _LOGGER.debug(
-                "%s rendered intent=%.1f -> brightness=%d, cct=%dK",
+                "%s rendered intent=%.1f -> brightness=%d, cct=%dK on %s",
                 self.entity_id,
                 self._intent,
                 brightness,
                 cct,
+                self._underlying_entity_id,
             )
         finally:
             self._applying = False

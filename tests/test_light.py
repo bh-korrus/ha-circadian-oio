@@ -180,6 +180,54 @@ async def test_turn_off_routes_to_underlying(
     assert hass.states.get(wrapper_id).state == "off"
 
 
+async def test_does_not_wrap_its_own_wrapper_entity(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """On reload the wrapper shares the bulb's device, so it shows up among the
+    device's light entities. Setup must skip our own platform and still target
+    the real bulb — otherwise the wrapper drives itself (the self-wrap bug)."""
+    device_id, underlying = oio_device
+    reg = er.async_get(hass)
+    dev_id = reg.async_get(underlying).device_id
+
+    # A leftover wrapper entity from a previous setup, on the same device, with
+    # an entity_id that sorts BEFORE the raw bulb — exactly what triggered the bug.
+    stale = reg.async_get_or_create(
+        "light",
+        DOMAIN,
+        f"{DOMAIN}_stale",
+        device_id=dev_id,
+        suggested_object_id="aaa_stale_circadian",
+    )
+    assert stale.entity_id < underlying  # would have been picked by the old code
+
+    await _setup_entry(hass, device_id)
+    wrapper_id = _wrapper_entity_id(hass, device_id)
+
+    downstream: list[dict] = []
+
+    @callback
+    def _record(event):
+        data = event.data
+        if data.get("domain") == "light" and data.get("service") == "turn_on":
+            service_data = data.get("service_data", {})
+            # Only the wrapper's render calls carry color_temp_kelvin; this skips
+            # the test's own plain turn_on of the wrapper.
+            if "color_temp_kelvin" in service_data:
+                downstream.append(service_data)
+
+    hass.bus.async_listen("call_service", _record)
+    await hass.services.async_call(
+        "light", "turn_on", {ATTR_ENTITY_ID: wrapper_id}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    targets = [c.get(ATTR_ENTITY_ID) for c in downstream]
+    assert underlying in targets, "wrapper did not drive the real bulb"
+    assert stale.entity_id not in targets, "wrapper drove a wrapper (self-wrap bug)"
+    assert wrapper_id not in targets, "wrapper drove itself"
+
+
 async def test_unload_restores_hidden_underlying(
     hass, auto_enable_custom_integrations, oio_device
 ):
