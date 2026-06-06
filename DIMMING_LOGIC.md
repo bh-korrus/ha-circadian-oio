@@ -218,9 +218,18 @@ rather than jerked down at the instant the boundary arrives.
 - The sunset transition slides the color cap from 6500 K to 2700 K over the 30
   minutes before sunset.
 
-Expansions are the opposite case and are handled instantly. At 5:30 AM (night
-ends) and at sunrise the allowed range grows; because the bulb is already inside
-the new, larger range there is nothing to walk, so the cap simply lifts.
+Morning is the mirror image, also ramped rather than snapped:
+
+- The morning brightness ramp eases the brightness cap from the night cap (10%)
+  back up to 100% over the transition window just after night ends, instead of
+  jumping at 5:30 AM. (Brightness only — color cooling is the sunrise ramp's job.)
+- The pre-sunrise CCT ramp slides the color cap from 2700 K up toward the daytime
+  maximum over the window before sunrise, so the light cools into the morning
+  rather than snapping cool the instant the sun crosses the horizon.
+
+The protective night window always wins where they overlap: if sunrise falls
+inside the late-night window, the most-restrictive-cap rule keeps the bulb dim
+and warm until night ends, regardless of the sunrise ramp.
 
 ### 5.7 Output clamping
 

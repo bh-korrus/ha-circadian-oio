@@ -148,11 +148,24 @@ def test_caps_just_before_530am():
     assert max_b == 10.0
 
 
-def test_caps_at_530am():
-    """5:30 AM: late-night zone ends. Now in pre-sunrise evening-mode."""
+def test_caps_at_530am_starts_morning_ramp():
+    """5:30 AM: night ends and the brightness cap begins easing up from the
+    night cap, rather than jumping straight to 100%."""
     max_b, max_cct = compute_caps(_t(5, 30), next_sunset=None, is_day=False)
-    assert max_b == 100.0
+    assert max_b == pytest.approx(10.0, abs=0.5)
     assert max_cct == 2700
+
+
+def test_caps_morning_ramp_midpoint():
+    """5:45 AM: 15 min into the 30-min morning ramp -> about 55%."""
+    max_b, _ = compute_caps(_t(5, 45), next_sunset=None, is_day=False)
+    assert max_b == pytest.approx(55.0, abs=1.0)
+
+
+def test_caps_after_morning_ramp():
+    """6:00 AM: morning ramp complete -> full brightness allowed."""
+    max_b, _ = compute_caps(_t(6, 0), next_sunset=None, is_day=False)
+    assert max_b == 100.0
 
 
 # --- Intent → output mapping --------------------------------------------------
@@ -310,6 +323,27 @@ def test_custom_min_cct_sets_the_warm_floor():
     for intent in range(0, 101, 5):
         _, c = render(intent, _t(12), next_sunset=_t(20), is_day=True, settings=custom)
         assert c >= 1800
+
+
+def test_presunrise_cct_ramps_up_before_sunrise():
+    """30 min before sunrise the color cap is still warm; it slides toward the
+    daytime max as sunrise approaches, instead of snapping cool at sunrise."""
+    sunrise = _t(6, 0)
+    # 30 min before sunrise (start of ramp): warm.
+    _, cct_start = compute_caps(
+        _t(5, 30), next_sunset=None, is_day=False, next_sunrise=sunrise
+    )
+    assert cct_start == pytest.approx(2700, abs=20)
+    # 15 min before: roughly halfway to 6500.
+    _, cct_mid = compute_caps(
+        _t(5, 45), next_sunset=None, is_day=False, next_sunrise=sunrise
+    )
+    assert cct_mid == pytest.approx(4600, abs=50)
+    # At sunrise: full daytime cap.
+    _, cct_end = compute_caps(
+        _t(6, 0), next_sunset=None, is_day=False, next_sunrise=sunrise
+    )
+    assert cct_end == pytest.approx(6500, abs=20)
 
 
 def test_default_floor_unchanged():

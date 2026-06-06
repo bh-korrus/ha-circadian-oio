@@ -65,6 +65,24 @@ def test_settings_from_options_parses_and_defaults():
     assert _settings_from_options({}) == DEFAULT_SETTINGS
 
 
+def test_effective_options_overlays_per_bulb_override():
+    """Per-bulb overrides win over globals; other bulbs keep the globals."""
+    from custom_components.circadian_oio.light import _effective_options
+
+    options = {
+        "night_start": "21:00:00",
+        "min_brightness": 1,
+        "overrides": {"dev1": {"night_start": "23:00:00", "min_brightness": 6}},
+    }
+    eff1 = _effective_options(options, "dev1")
+    assert eff1["night_start"] == "23:00:00"
+    assert eff1["min_brightness"] == 6
+
+    eff2 = _effective_options(options, "dev2")
+    assert eff2["night_start"] == "21:00:00"
+    assert eff2["min_brightness"] == 1
+
+
 def _wrapper_entity_id(hass: HomeAssistant, device_id: str) -> str | None:
     return er.async_get(hass).async_get_entity_id(
         "light", DOMAIN, f"{DOMAIN}_{device_id}"
@@ -173,6 +191,28 @@ async def test_periodic_tick_uses_long_transition(
 
     assert len(downstream) >= 2, "periodic tick never re-rendered"
     assert downstream[-1]["transition"] == RENDER_TRANSITION_SECONDS
+
+
+async def test_state_attributes_are_published(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """The wrapper exposes circadian state for dashboards/automations."""
+    device_id, _ = oio_device
+    await _setup_entry(hass, device_id)
+    wrapper_id = _wrapper_entity_id(hass, device_id)
+
+    await hass.services.async_call(
+        "light", "turn_on", {ATTR_ENTITY_ID: wrapper_id, "brightness": 200}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    attrs = hass.states.get(wrapper_id).attributes
+    assert "circadian_period" in attrs
+    assert "max_brightness_pct" in attrs
+    assert "max_color_temp_kelvin" in attrs
+    assert attrs["rendered_brightness"] is not None
+    assert attrs["rendered_color_temp_kelvin"] is not None
+    assert attrs["intent"] == pytest.approx(200 / 255 * 100, abs=0.5)
 
 
 async def test_turn_off_routes_to_underlying(

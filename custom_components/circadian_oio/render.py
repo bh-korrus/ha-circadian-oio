@@ -92,16 +92,30 @@ def _in_ninepm_transition(time_min: int, s: RenderSettings) -> bool:
     )
 
 
+def _in_morning_transition(time_min: int, s: RenderSettings) -> bool:
+    """The brightness ramp just after night ends (symmetric to the pre-night
+    ramp): the cap eases back up instead of jumping from the night cap to 100%."""
+    if s.transition_lead_min <= 0:
+        return False
+    return (
+        s.late_night_end_min
+        <= time_min
+        < s.late_night_end_min + s.transition_lead_min
+    )
+
+
 def compute_caps(
     now: datetime,
     next_sunset: Optional[datetime],
     is_day: bool,
     settings: RenderSettings = DEFAULT_SETTINGS,
+    next_sunrise: Optional[datetime] = None,
 ) -> tuple[float, int]:
     """Return (max_brightness_pct, max_cct) for the given moment.
 
     Takes the most restrictive cap across overlapping zones (late-night,
-    pre-night transition, sunset transition, evening, day).
+    pre-night transition, sunset transition, evening, morning brightness ramp,
+    pre-sunrise CCT ramp, day).
     """
     s = settings
     time_min = now.hour * 60 + now.minute
@@ -111,6 +125,19 @@ def compute_caps(
 
     in_late_night = _in_late_night(time_min, s)
     in_ninepm = _in_ninepm_transition(time_min, s)
+    in_morning = _in_morning_transition(time_min, s)
+
+    # Pre-sunrise CCT ramp: in the lead minutes before sunrise (sun still down),
+    # slide the color cap up from the evening cap toward the daytime max so the
+    # light cools into the morning instead of snapping cool at sunrise.
+    in_presunrise = False
+    presunrise_cct: float | None = None
+    if not is_day and next_sunrise is not None and s.transition_lead_min > 0:
+        mins_to_sunrise = (next_sunrise - now).total_seconds() / 60.0
+        if 0 <= mins_to_sunrise <= s.transition_lead_min:
+            in_presunrise = True
+            frac = mins_to_sunrise / s.transition_lead_min  # 1 at start, 0 at sunrise
+            presunrise_cct = s.max_cct_day - frac * (s.max_cct_day - EVENING_MAX_CCT)
 
     # Late-night zone.
     if in_late_night:
@@ -124,6 +151,14 @@ def compute_caps(
         candidates_b.append(mb)
         candidates_cct.append(curve_cct(mb))
 
+    # Morning brightness ramp (just after night ends): cap eases from the night
+    # cap back up to 100% over the lead. Brightness only — the CCT cooling is
+    # handled by the pre-sunrise ramp below.
+    if in_morning:
+        frac = (time_min - s.late_night_end_min) / s.transition_lead_min
+        mb = s.late_night_max_b_pct + frac * (100.0 - s.late_night_max_b_pct)
+        candidates_b.append(mb)
+
     # Sunset transition (CCT cap slides max_cct_day → evening cap over the lead).
     if is_day and next_sunset is not None and s.transition_lead_min > 0:
         mins_to_sunset = (next_sunset - now).total_seconds() / 60.0
@@ -133,12 +168,50 @@ def compute_caps(
                 EVENING_MAX_CCT + frac * (s.max_cct_day - EVENING_MAX_CCT)
             )
 
-    # Evening: sun is down but we're not yet in the pre-night transition or
-    # late night.
-    if not is_day and not in_late_night and not in_ninepm:
+    # Pre-sunrise CCT ramp candidate (replaces the flat evening cap while active).
+    if in_presunrise and presunrise_cct is not None:
+        candidates_cct.append(presunrise_cct)
+
+    # Evening: sun is down and we're not in another color zone. Skipped during
+    # the pre-sunrise ramp so the color cap can rise above the evening value.
+    if not is_day and not in_late_night and not in_ninepm and not in_presunrise:
         candidates_cct.append(float(EVENING_MAX_CCT))
 
     return min(candidates_b), int(round(min(candidates_cct)))
+
+
+def current_period(
+    now: datetime,
+    next_sunset: Optional[datetime],
+    is_day: bool,
+    settings: RenderSettings = DEFAULT_SETTINGS,
+    next_sunrise: Optional[datetime] = None,
+) -> str:
+    """Classify the moment into a human-readable circadian period.
+
+    One of: night, pre_night, morning_ramp, sunset_transition, pre_sunrise,
+    day, evening. Used for the wrapper's state attributes.
+    """
+    s = settings
+    time_min = now.hour * 60 + now.minute
+
+    if _in_late_night(time_min, s):
+        return "night"
+    if _in_ninepm_transition(time_min, s):
+        return "pre_night"
+    if _in_morning_transition(time_min, s):
+        return "morning_ramp"
+    if is_day:
+        if next_sunset is not None and s.transition_lead_min > 0:
+            mins = (next_sunset - now).total_seconds() / 60.0
+            if 0 <= mins <= s.transition_lead_min:
+                return "sunset_transition"
+        return "day"
+    if next_sunrise is not None and s.transition_lead_min > 0:
+        mins = (next_sunrise - now).total_seconds() / 60.0
+        if 0 <= mins <= s.transition_lead_min:
+            return "pre_sunrise"
+    return "evening"
 
 
 # --- Intent → output mapping --------------------------------------------------
@@ -149,6 +222,7 @@ def render(
     next_sunset: Optional[datetime],
     is_day: bool,
     settings: RenderSettings = DEFAULT_SETTINGS,
+    next_sunrise: Optional[datetime] = None,
 ) -> tuple[int, int]:
     """Compute underlying bulb (brightness 1–255, cct K) from user intent."""
     intent = max(0.0, min(100.0, intent))
@@ -156,7 +230,7 @@ def render(
     min_brightness = settings.min_brightness
     min_cct = settings.min_cct
 
-    max_b_pct, max_cct = compute_caps(now, next_sunset, is_day, settings)
+    max_b_pct, max_cct = compute_caps(now, next_sunset, is_day, settings, next_sunrise)
     floor_b_pct = (min_brightness / MAX_BRIGHTNESS) * 100.0
     curve_at_floor = curve_cct(floor_b_pct)
     curve_at_max = curve_cct(max_b_pct)

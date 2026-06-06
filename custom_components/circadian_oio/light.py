@@ -27,6 +27,7 @@ from .const import (
     CONF_NIGHT_BRIGHTNESS_PCT,
     CONF_NIGHT_END,
     CONF_NIGHT_START,
+    CONF_OVERRIDES,
     CONF_TRANSITION_MINUTES,
     CONF_WRAPPED_DEVICES,
     DATA_HIDDEN,
@@ -40,10 +41,11 @@ from .const import (
     MIN_CCT,
     NINEPM_TRANSITION_LEAD_MIN,
     RENDER_TRANSITION_SECONDS,
+    TUNABLE_KEYS,
     UPDATE_INTERVAL_SECONDS,
     USER_TRANSITION_SECONDS,
 )
-from .render import RenderSettings, render
+from .render import RenderSettings, compute_caps, current_period, render
 
 
 def _parse_hhmm_to_min(value: str | None, default_min: int) -> int:
@@ -57,8 +59,57 @@ def _parse_hhmm_to_min(value: str | None, default_min: int) -> int:
         return default_min
 
 
+def _next_occurrence(now: datetime, minutes: int) -> datetime:
+    """Next datetime at the given minutes-since-midnight, today or tomorrow."""
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    when = midnight + timedelta(minutes=minutes % (24 * 60))
+    if when <= now:
+        when += timedelta(days=1)
+    return when
+
+
+def _next_transition(
+    now: datetime,
+    s: RenderSettings,
+    next_sunset: datetime | None,
+    next_sunrise: datetime | None,
+) -> tuple[str | None, int | None]:
+    """Soonest upcoming schedule boundary as (name, minutes_until)."""
+    lead = s.transition_lead_min
+    events: list[tuple[str, datetime]] = [
+        ("pre_night", _next_occurrence(now, s.late_night_start_min - lead)),
+        ("night", _next_occurrence(now, s.late_night_start_min)),
+        ("morning_ramp", _next_occurrence(now, s.late_night_end_min)),
+        ("day", _next_occurrence(now, s.late_night_end_min + lead)),
+    ]
+    if next_sunset is not None:
+        if lead > 0:
+            events.append(("sunset_transition", next_sunset - timedelta(minutes=lead)))
+        events.append(("sunset", next_sunset))
+    if next_sunrise is not None:
+        if lead > 0:
+            events.append(("pre_sunrise", next_sunrise - timedelta(minutes=lead)))
+        events.append(("sunrise", next_sunrise))
+
+    future = [(name, when) for name, when in events if when > now]
+    if not future:
+        return None, None
+    name, when = min(future, key=lambda item: item[1])
+    return name, round((when - now).total_seconds() / 60.0)
+
+
+def _effective_options(options, device_id: str) -> dict:
+    """Global tunables overlaid with this bulb's per-bulb overrides."""
+    effective = {
+        k: options.get(k) for k in TUNABLE_KEYS if options.get(k) is not None
+    }
+    override = options.get(CONF_OVERRIDES, {}).get(device_id, {})
+    effective.update({k: v for k, v in override.items() if v is not None})
+    return effective
+
+
 def _settings_from_options(options) -> RenderSettings:
-    """Build render settings from a config entry's options, with defaults."""
+    """Build render settings from a flat options dict, with defaults."""
     return RenderSettings(
         late_night_start_min=_parse_hhmm_to_min(
             options.get(CONF_NIGHT_START), LATE_NIGHT_START_MIN
@@ -90,7 +141,6 @@ async def async_setup_entry(
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
     hidden: dict[str, object] = hass.data[DOMAIN][entry.entry_id][DATA_HIDDEN]
-    settings = _settings_from_options(entry.options)
 
     entities: list[CircadianOIOLight] = []
     for device_id in device_ids:
@@ -128,6 +178,9 @@ async def async_setup_entry(
                 hidden_by=er.RegistryEntryHider.INTEGRATION,
             )
 
+        settings = _settings_from_options(
+            _effective_options(entry.options, device_id)
+        )
         entities.append(
             CircadianOIOLight(hass, device, underlying_entity_id, settings)
         )
@@ -164,6 +217,10 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         self._is_on: bool = False
         # Guards against a 60s tick firing while a prior render is still in flight.
         self._applying: bool = False
+        # Last values pushed to the bulb, and the published state attributes.
+        self._rendered_brightness: int | None = None
+        self._rendered_cct: int | None = None
+        self._attrs: dict[str, Any] = {}
 
     # --- Lifecycle ------------------------------------------------------------
 
@@ -216,6 +273,11 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
             return None
         return max(1, min(255, round(self._intent / 100.0 * 255.0)))
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Surface the circadian state for dashboards and automations."""
+        return self._attrs
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         if ATTR_BRIGHTNESS in kwargs:
             self._intent = (kwargs[ATTR_BRIGHTNESS] / 255.0) * 100.0
@@ -255,6 +317,7 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         try:
             now = dt_util.now()
             next_sunset = get_astral_event_next(self.hass, "sunset")
+            next_sunrise = get_astral_event_next(self.hass, "sunrise")
             sun_state = self.hass.states.get("sun.sun")
             is_day = sun_state is not None and sun_state.state == "above_horizon"
 
@@ -264,6 +327,7 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
                 next_sunset=next_sunset,
                 is_day=is_day,
                 settings=self._settings,
+                next_sunrise=next_sunrise,
             )
 
             await self.hass.services.async_call(
@@ -278,6 +342,10 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
                 blocking=False,
             )
 
+            self._rendered_brightness = brightness
+            self._rendered_cct = cct
+            self._update_attrs(now, next_sunset, next_sunrise, is_day)
+
             _LOGGER.debug(
                 "%s rendered intent=%.1f -> brightness=%d, cct=%dK on %s",
                 self.entity_id,
@@ -286,5 +354,32 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
                 cct,
                 self._underlying_entity_id,
             )
+            self.async_write_ha_state()
         finally:
             self._applying = False
+
+    @callback
+    def _update_attrs(self, now, next_sunset, next_sunrise, is_day: bool) -> None:
+        """Recompute the published state attributes from the current moment."""
+        max_b_pct, max_cct = compute_caps(
+            now, next_sunset, is_day, self._settings, next_sunrise
+        )
+        period = current_period(
+            now, next_sunset, is_day, self._settings, next_sunrise
+        )
+        nxt_name, nxt_min = _next_transition(
+            now, self._settings, next_sunset, next_sunrise
+        )
+        attrs: dict[str, Any] = {
+            "intent": round(self._intent, 1),
+            "circadian_period": period,
+            "rendered_brightness": self._rendered_brightness,
+            "rendered_color_temp_kelvin": self._rendered_cct,
+            "max_brightness_pct": round(max_b_pct, 1),
+            "max_color_temp_kelvin": max_cct,
+            "underlying_entity_id": self._underlying_entity_id,
+        }
+        if nxt_name is not None:
+            attrs["next_transition"] = nxt_name
+            attrs["minutes_to_next_transition"] = nxt_min
+        self._attrs = attrs

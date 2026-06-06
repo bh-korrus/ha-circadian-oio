@@ -22,6 +22,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa
 
 from custom_components.circadian_oio.const import (  # noqa: E402
     CONF_DAY_MAX_CCT,
+    CONF_MIN_BRIGHTNESS,
+    CONF_MIN_CCT,
     CONF_NIGHT_BRIGHTNESS_PCT,
     CONF_NIGHT_END,
     CONF_NIGHT_START,
@@ -116,11 +118,15 @@ async def test_options_flow_unwrap_restores_underlying(
     ent_reg = er.async_get(hass)
     assert ent_reg.async_get(underlying).hidden_by == er.RegistryEntryHider.INTEGRATION
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] == FlowResultType.FORM
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    assert menu["type"] == FlowResultType.MENU
+    form = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "bulbs"}
+    )
+    assert form["type"] == FlowResultType.FORM
 
     result2 = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_WRAPPED_DEVICES: []}
+        form["flow_id"], {CONF_WRAPPED_DEVICES: []}
     )
     assert result2["type"] == FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
@@ -139,18 +145,23 @@ async def test_options_flow_stores_schedule_tuning(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] == FlowResultType.FORM
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    assert menu["type"] == FlowResultType.MENU
+    form = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "defaults"}
+    )
+    assert form["type"] == FlowResultType.FORM
 
     result2 = await hass.config_entries.options.async_configure(
-        result["flow_id"],
+        form["flow_id"],
         {
-            CONF_WRAPPED_DEVICES: [device_id],
             CONF_NIGHT_START: "22:30:00",
             CONF_NIGHT_END: "06:00:00",
             CONF_TRANSITION_MINUTES: 45,
             CONF_NIGHT_BRIGHTNESS_PCT: 15,
             CONF_DAY_MAX_CCT: 5000,
+            CONF_MIN_BRIGHTNESS: 1,
+            CONF_MIN_CCT: 800,
         },
     )
     assert result2["type"] == FlowResultType.CREATE_ENTRY
@@ -161,3 +172,45 @@ async def test_options_flow_stores_schedule_tuning(
     assert entry.options[CONF_DAY_MAX_CCT] == 5000
     # Bulb selection still lives in data, untouched.
     assert entry.data[CONF_WRAPPED_DEVICES] == [device_id]
+
+
+async def test_options_flow_per_bulb_override(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """A per-bulb override is stored under options[overrides][device_id]."""
+    device_id, _ = oio_device
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_WRAPPED_DEVICES: [device_id]})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    picker = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "overrides"}
+    )
+    assert picker["type"] == FlowResultType.FORM
+    form = await hass.config_entries.options.async_configure(
+        picker["flow_id"], {"device": device_id}
+    )
+    assert form["type"] == FlowResultType.FORM
+
+    done = await hass.config_entries.options.async_configure(
+        form["flow_id"],
+        {
+            CONF_NIGHT_START: "23:00:00",
+            CONF_NIGHT_END: "07:00:00",
+            CONF_TRANSITION_MINUTES: 20,
+            CONF_NIGHT_BRIGHTNESS_PCT: 5,
+            CONF_DAY_MAX_CCT: 6500,
+            CONF_MIN_BRIGHTNESS: 4,
+            CONF_MIN_CCT: 1800,
+            "reset_to_defaults": False,
+        },
+    )
+    assert done["type"] == FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    override = entry.options["overrides"][device_id]
+    assert override[CONF_NIGHT_START] == "23:00:00"
+    assert override[CONF_MIN_BRIGHTNESS] == 4
+    assert "reset_to_defaults" not in override

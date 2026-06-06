@@ -1,6 +1,9 @@
 """The Circadian OIO integration."""
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -8,7 +11,32 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import DATA_HIDDEN, DOMAIN
 
+_LOGGER = logging.getLogger(__name__)
+
 PLATFORMS: list[Platform] = [Platform.LIGHT]
+
+# Lovelace card auto-registration.
+_CARD_URL = f"/{DOMAIN}_static/circadian-oio-card.js"
+_CARD_FILE = "circadian-oio-card.js"
+
+
+async def _register_card(hass: HomeAssistant) -> None:
+    """Serve and auto-load the dashboard card. Best-effort and non-fatal —
+    a failure here must never block the integration from setting up."""
+    if hass.data.get(DOMAIN, {}).get("_card_registered"):
+        return
+    try:
+        from homeassistant.components.http import StaticPathConfig
+        from homeassistant.components.frontend import add_extra_js_url
+
+        www_dir = Path(__file__).parent / "www"
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(f"/{DOMAIN}_static", str(www_dir), cache_headers=False)]
+        )
+        add_extra_js_url(hass, _CARD_URL)
+        hass.data.setdefault(DOMAIN, {})["_card_registered"] = True
+    except Exception as err:  # noqa: BLE001 - never fail setup over the card
+        _LOGGER.warning("Could not register the Circadian OIO dashboard card: %s", err)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -17,6 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Per-entry runtime store. DATA_HIDDEN maps each underlying entity_id we
     # hide to its prior hidden_by value so async_unload_entry can restore it.
     hass.data[DOMAIN][entry.entry_id] = {DATA_HIDDEN: {}}
+    await _register_card(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True

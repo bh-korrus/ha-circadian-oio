@@ -28,6 +28,24 @@ CONF_DAY_MAX_CCT = "day_max_cct"
 CONF_MIN_BRIGHTNESS = "min_brightness"      # 1-255; raise if the bulb cuts out
 CONF_MIN_CCT = "min_cct"                     # warmest color the bulb can render
 
+# Per-bulb overrides live under this key in entry.options:
+#   options[CONF_OVERRIDES][device_id] = { any subset of the tunable keys }
+# Each wrapped bulb falls back to the top-level (global) value for any key it
+# does not override.
+CONF_OVERRIDES = "overrides"
+
+# The tunable keys, in display order. Used to build the settings forms and to
+# merge per-bulb overrides over the global defaults.
+TUNABLE_KEYS = (
+    CONF_NIGHT_START,
+    CONF_NIGHT_END,
+    CONF_TRANSITION_MINUTES,
+    CONF_NIGHT_BRIGHTNESS_PCT,
+    CONF_DAY_MAX_CCT,
+    CONF_MIN_BRIGHTNESS,
+    CONF_MIN_CCT,
+)
+
 # Runtime key under hass.data[DOMAIN][entry_id]: maps each underlying entity
 # we hid to its prior hidden_by value, so it can be restored on unload.
 DATA_HIDDEN = "hidden"

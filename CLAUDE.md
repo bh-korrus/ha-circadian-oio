@@ -63,6 +63,8 @@ ha-circadian-oio/
 ├── CLAUDE.md                                    ← you are here
 ├── README.md                                    ← user-facing install/usage docs
 ├── DESIGN.md                                    ← deeper architecture & science doc
+├── DIMMING_LOGIC.md                             ← standalone explainer of the dimming logic
+├── PUBLISHING.md                                ← HACS default + brands submission guide
 ├── LICENSE                                      ← MIT
 ├── hacs.json                                    ← HACS metadata
 ├── pytest.ini                                   ← pytest config (asyncio mode, testpaths)
@@ -79,8 +81,10 @@ ha-circadian-oio/
 │       ├── const.py                             ← constants: curves, caps, time zones
 │       ├── config_flow.py                       ← discovery + setup + options UI
 │       ├── light.py                             ← CircadianOIOLight entity
-│       ├── render.py                            ← pure math: caps, curve, intent mapping
-│       └── strings.json                         ← config flow UI text
+│       ├── render.py                            ← pure math: caps, curve, intent mapping, settings
+│       ├── strings.json                         ← config flow UI text
+│       └── www/
+│           └── circadian-oio-card.js            ← dashboard card, auto-registered by __init__
 └── tests/
     ├── __init__.py
     ├── conftest.py                              ← stubs HA when absent; PHACC fixtures when present
@@ -182,15 +186,11 @@ These are the things we know need attention. Update as items are addressed.
 
 - **Verify the manufacturer string.** The integration assumes OIO bulbs report manufacturer containing "korrus", "oio", or "ecosense". Confirm with a real bulb in Settings → Devices and update `const.KORRUS_MANUFACTURER_MATCHES` if needed.
 
-- **No sunrise CCT expansion.** Currently sunrise is an instant cap lift. A 30-minute pre-sunrise CCT ramp from 2700 K → 6500 K would mirror the sunset transition and feel more natural. Add to `render.compute_caps()`.
+- **Per-bulb floors are global-overridable but per-area scheduling is still manual.** Per-bulb overrides now exist (Options → Per-bulb overrides), so a bedroom can dim earlier than the living room. There is still no area-level grouping that sets several bulbs at once — you override them one at a time. Area-based config in the Options flow would be the next step.
 
-- **No 5:30 AM ramp.** Same as above for brightness. The morning cap currently jumps from 10% to 100% at 5:30 AM. Adding a 30-minute pre-5:30-AM brightness ramp would be symmetric with the 9 PM transition.
+- **HACS default-list submission + brand logo.** See `PUBLISHING.md` for the two-PR process (brands first, then hacs/default). Blocked only on a logo image. Until merged, users add the repo as a custom repository. CI keeps `ignore: brands` until the brand assets are accepted.
 
-- **Per-room time zones not supported.** All wrapped bulbs share the global schedule. Bedroom dimming earlier than living room would require per-bulb time zone overrides — probably best implemented as area-based config in the Options flow.
-
-- **No tests for `compute_caps` boundary conditions.** Add tests for: just before sunset, exactly at sunset, just after sunset, 8:29 / 8:30 / 8:59 / 9:00 PM, 5:29 / 5:30 AM, overlapping sunset + 9 PM transition.
-
-- **HACS submission.** Once stable, submit the repo URL to the HACS default repository list. Until then, users add it as a custom repository.
+- **The dashboard card is not test-covered.** `www/circadian-oio-card.js` is browser JS auto-registered by `__init__._register_card` (best-effort, non-fatal). The render/attributes it consumes are tested, but the card rendering itself is only syntax-checked. A real HA frontend would confirm it.
 
 ## Conventions
 

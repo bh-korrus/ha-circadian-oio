@@ -18,9 +18,22 @@
     "step": {
       "init": {
         "title": "Circadian OIO settings",
-        "description": "Choose which bulbs to wrap and tune the night schedule. Leave the schedule at its defaults unless you have a reason to change it — lifting the night brightness cap or cooling the night color weakens the circadian effect.",
+        "menu_options": {
+          "bulbs": "Choose which bulbs to wrap",
+          "defaults": "Default schedule & floors (all bulbs)",
+          "overrides": "Per-bulb overrides"
+        }
+      },
+      "bulbs": {
+        "title": "Wrapped bulbs",
         "data": {
-          "wrapped_devices": "OIO bulbs to wrap",
+          "wrapped_devices": "OIO bulbs to wrap"
+        }
+      },
+      "defaults": {
+        "title": "Default schedule & floors",
+        "description": "These apply to every wrapped bulb unless a per-bulb override is set. Leave the schedule at its defaults unless you have a reason to change it — lifting the night brightness cap or cooling the night color weakens the circadian effect.",
+        "data": {
           "night_start": "Night starts (dim/warm cap begins)",
           "night_end": "Night ends (cap lifts)",
           "transition_minutes": "Transition duration (minutes)",
@@ -28,6 +41,27 @@
           "day_max_cct": "Daytime max color temperature (K)",
           "min_brightness": "Minimum brightness (1-255, raise if the bulb cuts out at low dim)",
           "min_cct": "Minimum color temperature (K, warmest the bulb can render)"
+        }
+      },
+      "overrides": {
+        "title": "Per-bulb overrides",
+        "description": "Pick a bulb to give it its own schedule and floors, different from the global defaults.",
+        "data": {
+          "device": "Bulb"
+        }
+      },
+      "device": {
+        "title": "Override for {bulb}",
+        "description": "These values apply to this bulb only. Turn on 'Reset to defaults' to remove the override and follow the global settings again.",
+        "data": {
+          "night_start": "Night starts (dim/warm cap begins)",
+          "night_end": "Night ends (cap lifts)",
+          "transition_minutes": "Transition duration (minutes)",
+          "night_brightness_pct": "Night brightness cap (%)",
+          "day_max_cct": "Daytime max color temperature (K)",
+          "min_brightness": "Minimum brightness (1-255)",
+          "min_cct": "Minimum color temperature (K)",
+          "reset_to_defaults": "Reset this bulb to the global defaults"
         }
       }
     }
