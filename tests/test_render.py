@@ -288,3 +288,32 @@ def test_zero_transition_duration_does_not_divide_by_zero():
     compute_caps(_t(20, 45), next_sunset=None, is_day=False, settings=custom)
     # Would-be pre-sunset window:
     compute_caps(_t(19, 45), next_sunset=_t(20), is_day=True, settings=custom)
+
+
+def test_custom_min_brightness_raises_the_floor():
+    """Intent 0 should land on the configured minimum, not 1/255."""
+    custom = RenderSettings(min_brightness=8)
+    brightness, _ = render(0, _t(12), next_sunset=_t(20), is_day=True, settings=custom)
+    assert brightness == 8
+    # And nothing across the whole range drops below it.
+    for intent in range(0, 101, 5):
+        b, _ = render(intent, _t(12), next_sunset=_t(20), is_day=True, settings=custom)
+        assert b >= 8
+
+
+def test_custom_min_cct_sets_the_warm_floor():
+    """Intent 0 should sit at the configured warmest color, not 800 K."""
+    custom = RenderSettings(min_cct=1800)
+    _, cct = render(0, _t(12), next_sunset=_t(20), is_day=True, settings=custom)
+    assert cct == 1800
+    # Output never goes warmer than the configured floor.
+    for intent in range(0, 101, 5):
+        _, c = render(intent, _t(12), next_sunset=_t(20), is_day=True, settings=custom)
+        assert c >= 1800
+
+
+def test_default_floor_unchanged():
+    """Defaults still bottom out at 1/255 and 800 K."""
+    brightness, cct = render(0, _t(12), next_sunset=_t(20), is_day=True)
+    assert brightness == 1
+    assert cct == 800

@@ -22,6 +22,8 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_DAY_MAX_CCT,
+    CONF_MIN_BRIGHTNESS,
+    CONF_MIN_CCT,
     CONF_NIGHT_BRIGHTNESS_PCT,
     CONF_NIGHT_END,
     CONF_NIGHT_START,
@@ -35,6 +37,7 @@ from .const import (
     MAX_BRIGHTNESS,
     MAX_CCT_DAY,
     MIN_BRIGHTNESS,
+    MIN_CCT,
     NINEPM_TRANSITION_LEAD_MIN,
     RENDER_TRANSITION_SECONDS,
     UPDATE_INTERVAL_SECONDS,
@@ -70,6 +73,8 @@ def _settings_from_options(options) -> RenderSettings:
             options.get(CONF_NIGHT_BRIGHTNESS_PCT, LATE_NIGHT_MAX_B_PCT)
         ),
         max_cct_day=int(options.get(CONF_DAY_MAX_CCT, MAX_CCT_DAY)),
+        min_brightness=int(options.get(CONF_MIN_BRIGHTNESS, MIN_BRIGHTNESS)),
+        min_cct=int(options.get(CONF_MIN_CCT, MIN_CCT)),
     )
 
 _LOGGER = logging.getLogger(__name__)

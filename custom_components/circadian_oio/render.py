@@ -39,6 +39,10 @@ class RenderSettings:
     transition_lead_min: int = NINEPM_TRANSITION_LEAD_MIN
     late_night_max_b_pct: float = LATE_NIGHT_MAX_B_PCT
     max_cct_day: int = MAX_CCT_DAY
+    # Bulb floor. Raise min_brightness if the bulb switches off at the bottom of
+    # the range; raise min_cct to the warmest color the bulb can actually render.
+    min_brightness: int = MIN_BRIGHTNESS
+    min_cct: int = MIN_CCT
 
 
 DEFAULT_SETTINGS = RenderSettings()
@@ -149,8 +153,11 @@ def render(
     """Compute underlying bulb (brightness 1–255, cct K) from user intent."""
     intent = max(0.0, min(100.0, intent))
 
+    min_brightness = settings.min_brightness
+    min_cct = settings.min_cct
+
     max_b_pct, max_cct = compute_caps(now, next_sunset, is_day, settings)
-    floor_b_pct = (MIN_BRIGHTNESS / MAX_BRIGHTNESS) * 100.0
+    floor_b_pct = (min_brightness / MAX_BRIGHTNESS) * 100.0
     curve_at_floor = curve_cct(floor_b_pct)
     curve_at_max = curve_cct(max_b_pct)
 
@@ -159,10 +166,10 @@ def render(
     phase_b_end = PHASE_B_END_WITH_C if has_phase_c else 100.0
 
     if intent < PHASE_A_END:
-        # Phase A: at floor brightness, walk CCT from MIN_CCT to curve_at_floor
+        # Phase A: at floor brightness, walk CCT from min_cct to curve_at_floor
         frac = intent / PHASE_A_END
         b_pct = floor_b_pct
-        cct = MIN_CCT + frac * (curve_at_floor - MIN_CCT)
+        cct = min_cct + frac * (curve_at_floor - min_cct)
     elif has_phase_c and intent >= phase_b_end:
         # Phase C: at max brightness, walk CCT from curve_at_max to max_cct
         frac = (intent - phase_b_end) / (100.0 - phase_b_end)
@@ -177,6 +184,6 @@ def render(
         b_pct = y_from_lstar(L) * 100.0
         cct = min(curve_cct(b_pct), max_cct)
 
-    brightness = max(MIN_BRIGHTNESS, min(MAX_BRIGHTNESS, round(b_pct * 2.55)))
-    cct_int = max(MIN_CCT, min(settings.max_cct_day, int(round(cct))))
+    brightness = max(min_brightness, min(MAX_BRIGHTNESS, round(b_pct * 2.55)))
+    cct_int = max(min_cct, min(settings.max_cct_day, int(round(cct))))
     return brightness, cct_int

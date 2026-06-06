@@ -25,6 +25,8 @@ CONF_NIGHT_END = "night_end"                # time string "HH:MM:SS"
 CONF_TRANSITION_MINUTES = "transition_minutes"
 CONF_NIGHT_BRIGHTNESS_PCT = "night_brightness_pct"
 CONF_DAY_MAX_CCT = "day_max_cct"
+CONF_MIN_BRIGHTNESS = "min_brightness"      # 1-255; raise if the bulb cuts out
+CONF_MIN_CCT = "min_cct"                     # warmest color the bulb can render
 
 # Runtime key under hass.data[DOMAIN][entry_id]: maps each underlying entity
 # we hid to its prior hidden_by value, so it can be restored on unload.

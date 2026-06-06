@@ -19,6 +19,8 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_DAY_MAX_CCT,
+    CONF_MIN_BRIGHTNESS,
+    CONF_MIN_CCT,
     CONF_NIGHT_BRIGHTNESS_PCT,
     CONF_NIGHT_END,
     CONF_NIGHT_START,
@@ -30,6 +32,8 @@ from .const import (
     KORRUS_MANUFACTURER_MATCHES,
     LATE_NIGHT_MAX_B_PCT,
     MAX_CCT_DAY,
+    MIN_BRIGHTNESS,
+    MIN_CCT,
     NINEPM_TRANSITION_LEAD_MIN,
 )
 
@@ -199,6 +203,29 @@ class CircadianOIOOptionsFlow(config_entries.OptionsFlow):
                     NumberSelectorConfig(
                         min=2700,
                         max=6500,
+                        step=50,
+                        unit_of_measurement="K",
+                        mode=NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Required(
+                    CONF_MIN_BRIGHTNESS,
+                    default=opts.get(CONF_MIN_BRIGHTNESS, MIN_BRIGHTNESS),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=1,
+                        max=128,
+                        step=1,
+                        mode=NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Required(
+                    CONF_MIN_CCT,
+                    default=opts.get(CONF_MIN_CCT, MIN_CCT),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=800,
+                        max=2700,
                         step=50,
                         unit_of_measurement="K",
                         mode=NumberSelectorMode.BOX,

@@ -25,7 +25,9 @@
           "night_end": "Night ends (cap lifts)",
           "transition_minutes": "Transition duration (minutes)",
           "night_brightness_pct": "Night brightness cap (%)",
-          "day_max_cct": "Daytime max color temperature (K)"
+          "day_max_cct": "Daytime max color temperature (K)",
+          "min_brightness": "Minimum brightness (1-255, raise if the bulb cuts out at low dim)",
+          "min_cct": "Minimum color temperature (K, warmest the bulb can render)"
         }
       }
     }

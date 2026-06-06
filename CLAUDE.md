@@ -112,7 +112,7 @@ These are choices we made deliberately. If something seems wrong, check here bef
 
 7. **Manufacturer filter is case-insensitive substring match.** Matter VendorName fields can vary ("Korrus", "Korrus Inc.", "Ecosense / Korrus"). The substring approach is forgiving. Strings live in `const.KORRUS_MANUFACTURER_MATCHES` and are easy to extend.
 
-8. **The schedule is user-tunable; the curve is not.** The Options flow exposes five knobs — night start time, night end time, transition duration, night brightness cap, and daytime max CCT — stored in `entry.options`. The curve shape itself (exponent, `BASE_CCT`, `MIN_CCT`, the L\* phase split, the evening CCT cap) stays hard-coded in `const.py`; those define the circadian behavior and aren't safe to hand to arbitrary users. The options form's description warns that lifting the night cap or cooling the night color weakens the effect. If you add more knobs, keep schedule/intensity tunable and leave the curve math fixed.
+8. **The schedule and bulb floor are user-tunable; the curve is not.** The Options flow exposes seven knobs — night start time, night end time, transition duration, night brightness cap, daytime max CCT, minimum brightness, and minimum CCT — stored in `entry.options`. The first five are behavior; the last two are per-bulb hardware floors (raise minimum brightness if the bulb cuts out at the bottom; raise minimum CCT to the warmest the bulb can actually render). The curve shape itself (exponent, `BASE_CCT`, the L\* phase split, the evening CCT cap) stays hard-coded in `const.py`; those define the circadian behavior and aren't safe to hand to arbitrary users. The options form's description warns that lifting the night cap or cooling the night color weakens the effect. If you add more knobs, keep schedule/intensity tunable and leave the curve math fixed.
 
    Mechanically: tunables flow through a frozen `render.RenderSettings` dataclass whose fields default to the `const.py` values, so `render(...)`/`compute_caps(...)` with no `settings` argument reproduce the original hard-coded behavior (this keeps the render math pure and every existing test valid). `light.py` builds a `RenderSettings` from `entry.options` via `_settings_from_options()` and passes it to each entity; an options change reloads the entry, so entities pick up new settings. Time strings ("HH:MM:SS") are parsed to minutes-since-midnight in `light.py` before reaching the pure layer. A `transition_lead_min` of 0 is valid (instant cap changes) and is guarded against division-by-zero in `compute_caps`.
 
@@ -181,8 +181,6 @@ This is the fastest iteration loop. Once render looks right, restart HA and let 
 These are the things we know need attention. Update as items are addressed.
 
 - **Verify the manufacturer string.** The integration assumes OIO bulbs report manufacturer containing "korrus", "oio", or "ecosense". Confirm with a real bulb in Settings → Devices and update `const.KORRUS_MANUFACTURER_MATCHES` if needed.
-
-- **Brightness floor below bulb minimum.** Some OIO bulbs turn off entirely at `brightness: 1` (1/255). Test the actual floor and raise `const.MIN_BRIGHTNESS` to 2 or 3 if needed. The render math will adapt automatically.
 
 - **No sunrise CCT expansion.** Currently sunrise is an instant cap lift. A 30-minute pre-sunrise CCT ramp from 2700 K → 6500 K would mirror the sunset transition and feel more natural. Add to `render.compute_caps()`.
 
