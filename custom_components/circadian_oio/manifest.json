@@ -1,7 +1,7 @@
 {
   "domain": "circadian_oio",
   "name": "Circadian OIO",
-  "after_dependencies": ["sun"],
+  "after_dependencies": ["frontend", "http", "sun"],
   "codeowners": ["@bh-korrus"],
   "config_flow": true,
   "dependencies": ["light"],
