@@ -17,8 +17,16 @@ Our repo side is ready:
   not yet in the Home Assistant brands repo (step 1 below). Remove that ignore
   once step 1 is merged.
 
-The one thing only you can provide is the logo artwork — image files can't be
-generated here.
+Brand assets are now in the repo at `custom_components/circadian_oio/brand/`
+(`icon.png` 256x256, `icon@2x.png` 512x512 — the electric-blue "o" ring; and
+`logo.png` — the trimmed wordmark). HACS checks this local `brand/` folder
+before the central brands repo, so HACS validation passes without the external
+PR, and the icon shows in the HACS store. The `ignore: brands` line has been
+removed from CI.
+
+The home-assistant/brands PR below is still worth doing: the icon shown in core
+Home Assistant's Settings → Devices & Services comes from that central repo, not
+the local folder. The same files in `brand/` are ready to submit.
 
 ## Step 1 — Add brand assets to home-assistant/brands
 
@@ -40,11 +48,14 @@ custom_integrations/circadian_oio/logo.png
 
 Then:
 
+The prepared files are in this repo at `custom_components/circadian_oio/brand/`
+(icon.png, icon@2x.png, logo.png) — copy them straight across.
+
 ```bash
 gh repo fork home-assistant/brands --clone
 cd brands
 mkdir -p custom_integrations/circadian_oio
-# copy icon.png / logo.png into that folder
+# copy icon.png / icon@2x.png / logo.png from ha-circadian-oio/custom_components/circadian_oio/brand/
 git checkout -b add-circadian-oio
 git add custom_integrations/circadian_oio
 git commit -m "Add Circadian OIO brand assets"

@@ -83,6 +83,7 @@ ha-circadian-oio/
 │       ├── light.py                             ← CircadianOIOLight entity
 │       ├── render.py                            ← pure math: caps, curve, intent mapping, settings
 │       ├── strings.json                         ← config flow UI text
+│       ├── brand/                               ← icon.png, icon@2x.png, logo.png (Korrus "o" ring)
 │       └── www/
 │           └── circadian-oio-card.js            ← dashboard card, auto-registered by __init__
 └── tests/
@@ -188,7 +189,7 @@ These are the things we know need attention. Update as items are addressed.
 
 - **Per-bulb floors are global-overridable but per-area scheduling is still manual.** Per-bulb overrides now exist (Options → Per-bulb overrides), so a bedroom can dim earlier than the living room. There is still no area-level grouping that sets several bulbs at once — you override them one at a time. Area-based config in the Options flow would be the next step.
 
-- **HACS default-list submission + brand logo.** See `PUBLISHING.md` for the two-PR process (brands first, then hacs/default). Blocked only on a logo image. Until merged, users add the repo as a custom repository. CI keeps `ignore: brands` until the brand assets are accepted.
+- **HACS default-list submission + brand logo.** Brand assets exist in `custom_components/circadian_oio/brand/` (the electric-blue Korrus "o" ring as icon, the wordmark as logo), so HACS validation passes and the HACS store shows the icon — `ignore: brands` has been removed from CI. Still outstanding: the home-assistant/brands PR (so the icon shows in core HA's integration UI) and the hacs/default PR (so it's installable by name). See `PUBLISHING.md`; both are ready to submit using the prepared assets.
 
 - **The dashboard card is not test-covered.** `www/circadian-oio-card.js` is browser JS auto-registered by `__init__._register_card` (best-effort, non-fatal). The render/attributes it consumes are tested, but the card rendering itself is only syntax-checked. A real HA frontend would confirm it.
 
