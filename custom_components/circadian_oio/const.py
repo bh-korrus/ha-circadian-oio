@@ -101,10 +101,9 @@ UPDATE_INTERVAL_SECONDS = 60
 RENDER_TRANSITION_SECONDS = 50
 
 # Smoothing applied when the user (or a script/voice/Pico) actively changes the
-# slider. This must be short or the bulb appears to lag the control by the full
-# RENDER_TRANSITION_SECONDS. A small non-zero value keeps the move smooth
-# without feeling sluggish.
-USER_TRANSITION_SECONDS = 1
+# light. Zero means a deliberate press is honored instantly, matching turn-off;
+# the slow, smooth fade is reserved for the unattended time-of-day drift.
+USER_TRANSITION_SECONDS = 0
 
 # Where in the intent space [0-100] each phase lives. Phase A is the sub-curve
 # CCT-only walk below the brightness floor; Phase B is the brightness ramp with

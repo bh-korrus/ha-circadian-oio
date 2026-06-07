@@ -217,6 +217,39 @@ async def test_state_attributes_are_published(
     assert attrs["intent"] == pytest.approx(200 / 255 * 100, abs=0.5)
 
 
+async def test_reacts_instantly_when_underlying_turns_on(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """Switching the underlying bulb on (e.g. from a group a Pico drives) makes
+    the wrapper render immediately, without waiting for the periodic tick."""
+    device_id, underlying = oio_device
+    await _setup_entry(hass, device_id)
+    wrapper_id = _wrapper_entity_id(hass, device_id)
+    assert hass.states.get(wrapper_id).state == "off"
+
+    rendered: list[dict] = []
+
+    @callback
+    def _record(event):
+        data = event.data
+        if data.get("domain") == "light" and data.get("service") == "turn_on":
+            service_data = data.get("service_data", {})
+            if (
+                service_data.get(ATTR_ENTITY_ID) == underlying
+                and "color_temp_kelvin" in service_data
+            ):
+                rendered.append(service_data)
+
+    hass.bus.async_listen("call_service", _record)
+
+    # Turn the underlying on and let only the event loop run — no tick fired.
+    hass.states.async_set(underlying, "on")
+    await hass.async_block_till_done()
+
+    assert hass.states.get(wrapper_id).state == "on"
+    assert rendered, "wrapper did not render immediately on the state change"
+
+
 async def test_tick_adopts_externally_turned_on_bulb(
     hass, auto_enable_custom_integrations, oio_device
 ):

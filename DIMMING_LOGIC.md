@@ -261,27 +261,27 @@ rendered output drifts. A 60-second cadence is cheap (one command per minute per
 bulb) and fine-grained enough that the 30-minute transitions look smooth — about
 30 update steps across each transition window.
 
-The tick syncs to the underlying bulb's real on/off state first. If the bulb was
-turned on outside the wrapper — by voice, a scene, or the raw entity — the
-wrapper adopts it and applies circadian drift anyway; if it was turned off
-externally, the wrapper stops driving it. Without this the drift would only run
-when the wrapper itself had turned the bulb on, so a bulb switched on another way
-would sit at a fixed color until the slider was touched.
+The tick is a backstop, not the primary path. The wrapper also subscribes to the
+underlying bulb's state, so it reacts the instant the bulb is switched on or off
+by any route — a Pico remote, a light group, a scene, voice — and renders
+immediately rather than waiting up to a minute for the next tick. The tick still
+runs so the color keeps drifting while the bulb sits on, and it re-syncs on/off
+state as a safety net, but a press no longer waits on the poll.
 
 ## 7. Transition timing: snappy for the user, smooth for the drift
 
 Every command to the bulb carries a fade time. The integration uses two different
 ones depending on what triggered the render:
 
-- A direct user action (slider, voice, script, Pico) fades over 1 second, so the
-  bulb tracks the control and feels responsive.
+- A direct user action (slider, voice, script, Pico) is applied instantly (zero
+  transition), so a deliberate press is honored immediately, matching turn-off.
 - The 60-second time-of-day tick fades over 50 seconds, roughly matching the tick
   interval, so consecutive ticks chain into one continuous fade rather than
   visible once-a-minute steps.
 
 Using the long fade for user actions was an early mistake — it made the bulb
-appear to lag the slider by nearly a minute — which is why the two paths are now
-distinct.
+appear to lag the control — which is why the two paths are distinct, and why
+deliberate inputs now use no transition at all.
 
 ## 8. What the user can tune
 

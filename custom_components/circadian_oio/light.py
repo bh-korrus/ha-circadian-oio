@@ -15,7 +15,10 @@ from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_interval,
+)
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.util import dt as dt_util
@@ -259,6 +262,17 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
             )
         )
 
+        # React the instant the underlying bulb is switched on or off by any
+        # route — a Pico, a group, a scene, voice — rather than waiting up to a
+        # minute for the next tick to notice.
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass,
+                [self._underlying_entity_id],
+                self._underlying_changed,
+            )
+        )
+
         # Push the current intent to the bulb on startup (if on). Settle quickly
         # rather than crawling in over the long time-of-day transition.
         if self._is_on:
@@ -301,6 +315,25 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         self.async_write_ha_state()
 
     # --- Render plumbing ------------------------------------------------------
+
+    @callback
+    def _underlying_changed(self, event) -> None:
+        """Mirror the underlying bulb's on/off the moment it changes, so an
+        external control (Pico, group, scene, voice) gets an instant circadian
+        render instead of waiting for the periodic tick. Guarded so the
+        wrapper's own commands don't re-trigger it."""
+        if self._applying:
+            return
+        new_state = event.data.get("new_state")
+        if new_state is None:
+            return
+        if new_state.state == STATE_ON and not self._is_on:
+            self._is_on = True
+            self.async_write_ha_state()
+            self.hass.async_create_task(self._apply(USER_TRANSITION_SECONDS))
+        elif new_state.state == STATE_OFF and self._is_on:
+            self._is_on = False
+            self.async_write_ha_state()
 
     @callback
     def _handle_tick(self, _now) -> None:
