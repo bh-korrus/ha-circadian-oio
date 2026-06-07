@@ -11,7 +11,7 @@ from homeassistant.components.light import (
     LightEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_ON
+from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -302,8 +302,26 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
     @callback
     def _handle_tick(self, _now) -> None:
         """Periodic re-render; fire-and-forget. Uses the long transition so the
-        time-of-day drift fades smoothly between ticks."""
-        if self._is_on and not self._applying:
+        time-of-day drift fades smoothly between ticks.
+
+        Syncs to the underlying bulb's real state first, so circadian drift
+        applies whenever the bulb is on — even if it was turned on or off
+        outside the wrapper (voice, a scene, or the raw entity). Without this,
+        the bulb only tracked time when the wrapper itself had turned it on.
+        """
+        if self._applying:
+            return
+
+        underlying = self.hass.states.get(self._underlying_entity_id)
+        if underlying is not None:
+            if underlying.state == STATE_ON and not self._is_on:
+                self._is_on = True
+                self.async_write_ha_state()
+            elif underlying.state == STATE_OFF and self._is_on:
+                self._is_on = False
+                self.async_write_ha_state()
+
+        if self._is_on:
             self.hass.async_create_task(self._apply(RENDER_TRANSITION_SECONDS))
 
     async def _apply(self, transition: float) -> None:

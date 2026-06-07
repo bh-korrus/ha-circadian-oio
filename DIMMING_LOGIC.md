@@ -251,6 +251,13 @@ rendered output drifts. A 60-second cadence is cheap (one command per minute per
 bulb) and fine-grained enough that the 30-minute transitions look smooth — about
 30 update steps across each transition window.
 
+The tick syncs to the underlying bulb's real on/off state first. If the bulb was
+turned on outside the wrapper — by voice, a scene, or the raw entity — the
+wrapper adopts it and applies circadian drift anyway; if it was turned off
+externally, the wrapper stops driving it. Without this the drift would only run
+when the wrapper itself had turned the bulb on, so a bulb switched on another way
+would sit at a fixed color until the slider was touched.
+
 ## 7. Transition timing: snappy for the user, smooth for the drift
 
 Every command to the bulb carries a fade time. The integration uses two different

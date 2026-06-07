@@ -30,3 +30,21 @@ def test_apply_does_not_build_datetime_from_tz_string():
 def test_apply_uses_dt_util_now():
     """The render path must source 'now' from HA's tz-aware helper."""
     assert "dt_util.now()" in LIGHT_SRC
+
+
+def test_translations_mirror_strings():
+    """Custom integrations load flow text from translations/en.json, not
+    strings.json. The two must exist and match, or the menu renders blank."""
+    import json
+
+    base = (
+        Path(__file__).resolve().parent.parent
+        / "custom_components"
+        / "circadian_oio"
+    )
+    strings = json.loads((base / "strings.json").read_text())
+    en = json.loads((base / "translations" / "en.json").read_text())
+    assert en == strings, "translations/en.json must mirror strings.json"
+    # The options menu labels must be present (the missing-labels bug).
+    menu = en["options"]["step"]["init"]["menu_options"]
+    assert set(menu) == {"bulbs", "defaults", "overrides"}

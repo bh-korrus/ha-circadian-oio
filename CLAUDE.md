@@ -202,6 +202,7 @@ These are the things we know need attention. Update as items are addressed.
 - **No new pip dependencies** without strong justification. The `requirements` field in `manifest.json` is empty and should stay that way; everything we need is in HA core.
 - **Constants in `const.py`**, not magic numbers in `light.py` or `render.py`.
 - **Logging at DEBUG for routine work**, INFO for state changes the user might care about, WARNING for misconfigurations, ERROR for failures.
+- **Flow text lives in BOTH `strings.json` and `translations/en.json`.** Custom integrations load config/options flow UI text from `translations/en.json` at runtime; `strings.json` is the source HA core compiles but is not read for custom components. They must be kept identical — `test_translations_mirror_strings` enforces it. A menu with no translation renders as blank rows, which is how the missing-labels bug surfaced.
 
 ## For AI assistants working on this codebase
 
