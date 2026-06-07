@@ -391,28 +391,29 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
                 next_sunrise=next_sunrise,
             )
 
-            changed = (
-                brightness != self._rendered_brightness
-                or cct != self._rendered_cct
-            )
-            if force or changed:
+            changed_b = brightness != self._rendered_brightness
+            changed_c = cct != self._rendered_cct
+            if force or changed_b or changed_c:
+                data = {
+                    "entity_id": self._underlying_entity_id,
+                    "brightness": brightness,
+                    "transition": transition,
+                }
+                # Only send color when it changed. The bulb retains its color
+                # across on/off, so omitting it on rapid toggles roughly halves
+                # the Matter commands per press (one cluster write instead of two).
+                if changed_c:
+                    data["color_temp_kelvin"] = cct
                 await self.hass.services.async_call(
-                    "light",
-                    "turn_on",
-                    {
-                        "entity_id": self._underlying_entity_id,
-                        "brightness": brightness,
-                        "color_temp_kelvin": cct,
-                        "transition": transition,
-                    },
-                    blocking=False,
+                    "light", "turn_on", data, blocking=False
                 )
                 _LOGGER.debug(
-                    "%s rendered intent=%.1f -> brightness=%d, cct=%dK on %s",
+                    "%s rendered intent=%.1f -> brightness=%d, cct=%dK%s on %s",
                     self.entity_id,
                     self._intent,
                     brightness,
                     cct,
+                    "" if changed_c else " (color unchanged, not sent)",
                     self._underlying_entity_id,
                 )
 
