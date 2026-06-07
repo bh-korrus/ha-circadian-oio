@@ -177,8 +177,15 @@ do at a given time. Each applicable zone contributes a candidate maximum
 brightness and a candidate maximum color temperature, and the integration takes
 the most restrictive of each (the minimum). The zones:
 
-- Daytime, no transition active: full range. Up to 100% brightness and up to
-  6500 K. High melanopic content to support daytime alertness and entrainment.
+- Daytime, no transition active: up to 100% brightness, and a color cap that
+  follows an arc rather than sitting flat. The arc is at the daytime base (4500 K
+  by default) at sunrise and again at the start of the sunset transition, and
+  rises to the daytime peak (6500 K by default) at solar noon. The shape is a
+  square-rooted sine, so most of the day is spent near the peak (a bias toward
+  high, alerting color) while the value is always moving — it touches the exact
+  peak only momentarily at noon. This keeps daytime light dynamic instead of a
+  static 6500 K block. The arc needs both sunrise and sunset to be known; if only
+  one is available it falls back to a flat cap at the peak.
 - Late night (default 9:00 PM to 5:30 AM): brightness capped at 10% and color
   capped at the curve value for 10% (about 2030 K). This is the low-melanopic
   protective window before and during sleep.
@@ -215,17 +222,20 @@ rather than jerked down at the instant the boundary arrives.
 
 - The pre-night transition slides the brightness cap from 100% to 10% (and color
   along the curve) over the 30 minutes before night starts.
-- The sunset transition slides the color cap from 6500 K to 2700 K over the 30
-  minutes before sunset.
+- The sunset transition slides the color cap from the daytime base (4500 K) down
+  to 2700 K over the 30 minutes before sunset. It begins exactly where the
+  daytime arc's evening shoulder ends, so the handoff is seamless, and it still
+  reaches 2700 K precisely at sunset.
 
 Morning is the mirror image, also ramped rather than snapped:
 
 - The morning brightness ramp eases the brightness cap from the night cap (10%)
   back up to 100% over the transition window just after night ends, instead of
   jumping at 5:30 AM. (Brightness only — color cooling is the sunrise ramp's job.)
-- The pre-sunrise CCT ramp slides the color cap from 2700 K up toward the daytime
-  maximum over the window before sunrise, so the light cools into the morning
-  rather than snapping cool the instant the sun crosses the horizon.
+- The pre-sunrise CCT ramp slides the color cap from 2700 K up to the daytime
+  base (4500 K) over the window before sunrise, handing off to the daytime arc at
+  sunrise, so the light cools into the morning rather than snapping cool the
+  instant the sun crosses the horizon.
 
 The protective night window always wins where they overlap: if sunrise falls
 inside the late-night window, the most-restrictive-cap rule keeps the bulb dim
@@ -285,8 +295,11 @@ The schedule and intensity are user-tunable through the integration's settings:
   pre-sunset slides take. A value of 0 means instant cap changes.
 - Night brightness cap (default 10%) — the maximum brightness during the night
   window.
-- Daytime maximum color temperature (default 6500 K) — the coolest the light is
-  allowed to get in the day.
+- Daytime peak color temperature (default 6500 K) — the coolest the light gets,
+  reached at solar noon at the top of the daytime arc.
+- Daytime base color temperature (default 4500 K) — the arc's shoulders at
+  sunrise and at the start of the sunset transition. Lower it for a warmer start
+  and end to the day; the arc still peaks at the daytime peak value at noon.
 - Minimum brightness (default 1 of 255) — the lowest level the bulb is ever
   commanded to. Raise this if the bulb switches off at the bottom of the range
   instead of staying dimly lit.

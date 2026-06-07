@@ -19,6 +19,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_DAY_BASE_CCT,
     CONF_DAY_MAX_CCT,
     CONF_MIN_BRIGHTNESS,
     CONF_MIN_CCT,
@@ -28,6 +29,7 @@ from .const import (
     CONF_OVERRIDES,
     CONF_TRANSITION_MINUTES,
     CONF_WRAPPED_DEVICES,
+    DAY_BASE_CCT,
     DEFAULT_NIGHT_END,
     DEFAULT_NIGHT_START,
     DOMAIN,
@@ -48,6 +50,7 @@ _TUNABLE_DEFAULTS = {
     CONF_TRANSITION_MINUTES: NINEPM_TRANSITION_LEAD_MIN,
     CONF_NIGHT_BRIGHTNESS_PCT: LATE_NIGHT_MAX_B_PCT,
     CONF_DAY_MAX_CCT: MAX_CCT_DAY,
+    CONF_DAY_BASE_CCT: DAY_BASE_CCT,
     CONF_MIN_BRIGHTNESS: MIN_BRIGHTNESS,
     CONF_MIN_CCT: MIN_CCT,
 }
@@ -82,6 +85,12 @@ def _tuning_fields(values: dict[str, Any]) -> dict:
             )
         ),
         vol.Required(CONF_DAY_MAX_CCT, default=d(CONF_DAY_MAX_CCT)): NumberSelector(
+            NumberSelectorConfig(
+                min=2700, max=6500, step=50, unit_of_measurement="K",
+                mode=NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Required(CONF_DAY_BASE_CCT, default=d(CONF_DAY_BASE_CCT)): NumberSelector(
             NumberSelectorConfig(
                 min=2700, max=6500, step=50, unit_of_measurement="K",
                 mode=NumberSelectorMode.BOX,

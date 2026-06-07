@@ -1,12 +1,14 @@
 """Render logic: maps user intent + current time to (brightness, CCT)."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from .const import (
     BASE_CCT,
+    DAY_BASE_CCT,
     EVENING_MAX_CCT,
     INCANDESCENT_EXP,
     LATE_NIGHT_END_MIN,
@@ -38,7 +40,8 @@ class RenderSettings:
     late_night_end_min: int = LATE_NIGHT_END_MIN
     transition_lead_min: int = NINEPM_TRANSITION_LEAD_MIN
     late_night_max_b_pct: float = LATE_NIGHT_MAX_B_PCT
-    max_cct_day: int = MAX_CCT_DAY
+    max_cct_day: int = MAX_CCT_DAY        # arc peak at solar noon
+    day_base_cct: int = DAY_BASE_CCT      # arc shoulders (sunrise / pre-sunset)
     # Bulb floor. Raise min_brightness if the bulb switches off at the bottom of
     # the range; raise min_cct to the warmest color the bulb can actually render.
     min_brightness: int = MIN_BRIGHTNESS
@@ -92,6 +95,15 @@ def _in_ninepm_transition(time_min: int, s: RenderSettings) -> bool:
     )
 
 
+def _arc_shape(t: float) -> float:
+    """Smooth 0 -> 1 -> 0 bump on [0, 1], peaking at 0.5. The square root lifts
+    the shoulders so most of the day is spent close to the peak (the requested
+    bias toward the high end), while the slope is zero only at the single peak —
+    so the value is always moving and never sits on a flat plateau."""
+    t = max(0.0, min(1.0, t))
+    return math.sqrt(math.sin(math.pi * t))
+
+
 def _in_morning_transition(time_min: int, s: RenderSettings) -> bool:
     """The brightness ramp just after night ends (symmetric to the pre-night
     ramp): the cap eases back up instead of jumping from the night cap to 100%."""
@@ -137,7 +149,8 @@ def compute_caps(
         if 0 <= mins_to_sunrise <= s.transition_lead_min:
             in_presunrise = True
             frac = mins_to_sunrise / s.transition_lead_min  # 1 at start, 0 at sunrise
-            presunrise_cct = s.max_cct_day - frac * (s.max_cct_day - EVENING_MAX_CCT)
+            # Warm (evening) at the start, up to the day arc's base by sunrise.
+            presunrise_cct = s.day_base_cct - frac * (s.day_base_cct - EVENING_MAX_CCT)
 
     # Late-night zone.
     if in_late_night:
@@ -159,13 +172,28 @@ def compute_caps(
         mb = s.late_night_max_b_pct + frac * (100.0 - s.late_night_max_b_pct)
         candidates_b.append(mb)
 
-    # Sunset transition (CCT cap slides max_cct_day → evening cap over the lead).
+    # Daytime CCT arc: between sunrise and the start of the sunset transition,
+    # the color cap rises from the arc base at sunrise to the arc peak at solar
+    # noon and back, always moving. Needs both sun events; with only a partial
+    # set it falls back to the flat max_cct_day ceiling already in candidates.
+    if is_day and next_sunset is not None and next_sunrise is not None:
+        today_sunrise = next_sunrise - timedelta(days=1)
+        arc_end = next_sunset - timedelta(minutes=s.transition_lead_min)
+        span = (arc_end - today_sunrise).total_seconds()
+        if span > 0:
+            t = (now - today_sunrise).total_seconds() / span
+            candidates_cct.append(
+                s.day_base_cct + (s.max_cct_day - s.day_base_cct) * _arc_shape(t)
+            )
+
+    # Sunset transition (CCT cap slides the arc base → evening cap over the lead,
+    # so it is still at the evening cap exactly at sunset).
     if is_day and next_sunset is not None and s.transition_lead_min > 0:
         mins_to_sunset = (next_sunset - now).total_seconds() / 60.0
         if 0 <= mins_to_sunset <= s.transition_lead_min:
             frac = mins_to_sunset / s.transition_lead_min
             candidates_cct.append(
-                EVENING_MAX_CCT + frac * (s.max_cct_day - EVENING_MAX_CCT)
+                EVENING_MAX_CCT + frac * (s.day_base_cct - EVENING_MAX_CCT)
             )
 
     # Pre-sunrise CCT ramp candidate (replaces the flat evening cap while active).

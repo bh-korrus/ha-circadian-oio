@@ -24,7 +24,8 @@ CONF_NIGHT_START = "night_start"            # time string "HH:MM:SS"
 CONF_NIGHT_END = "night_end"                # time string "HH:MM:SS"
 CONF_TRANSITION_MINUTES = "transition_minutes"
 CONF_NIGHT_BRIGHTNESS_PCT = "night_brightness_pct"
-CONF_DAY_MAX_CCT = "day_max_cct"
+CONF_DAY_MAX_CCT = "day_max_cct"             # arc peak at solar noon
+CONF_DAY_BASE_CCT = "day_base_cct"           # arc shoulders (sunrise / pre-sunset)
 CONF_MIN_BRIGHTNESS = "min_brightness"      # 1-255; raise if the bulb cuts out
 CONF_MIN_CCT = "min_cct"                     # warmest color the bulb can render
 
@@ -42,6 +43,7 @@ TUNABLE_KEYS = (
     CONF_TRANSITION_MINUTES,
     CONF_NIGHT_BRIGHTNESS_PCT,
     CONF_DAY_MAX_CCT,
+    CONF_DAY_BASE_CCT,
     CONF_MIN_BRIGHTNESS,
     CONF_MIN_CCT,
 )
@@ -65,6 +67,10 @@ MAX_BRIGHTNESS = 255
 # candle-flame and lower while staying at minimum brightness.
 MIN_CCT = 800
 MAX_CCT_DAY = 6500
+
+# Daytime color follows an arc: it sits at DAY_BASE_CCT at sunrise and at the
+# start of the sunset transition, and arcs up to MAX_CCT_DAY at solar noon.
+DAY_BASE_CCT = 4500
 
 # --- Time zones ---------------------------------------------------------------
 

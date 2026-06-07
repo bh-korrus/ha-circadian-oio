@@ -21,6 +21,7 @@ from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_DAY_BASE_CCT,
     CONF_DAY_MAX_CCT,
     CONF_MIN_BRIGHTNESS,
     CONF_MIN_CCT,
@@ -31,6 +32,7 @@ from .const import (
     CONF_TRANSITION_MINUTES,
     CONF_WRAPPED_DEVICES,
     DATA_HIDDEN,
+    DAY_BASE_CCT,
     DOMAIN,
     LATE_NIGHT_END_MIN,
     LATE_NIGHT_MAX_B_PCT,
@@ -124,6 +126,7 @@ def _settings_from_options(options) -> RenderSettings:
             options.get(CONF_NIGHT_BRIGHTNESS_PCT, LATE_NIGHT_MAX_B_PCT)
         ),
         max_cct_day=int(options.get(CONF_DAY_MAX_CCT, MAX_CCT_DAY)),
+        day_base_cct=int(options.get(CONF_DAY_BASE_CCT, DAY_BASE_CCT)),
         min_brightness=int(options.get(CONF_MIN_BRIGHTNESS, MIN_BRIGHTNESS)),
         min_cct=int(options.get(CONF_MIN_CCT, MIN_CCT)),
     )

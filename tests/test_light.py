@@ -50,6 +50,7 @@ def test_settings_from_options_parses_and_defaults():
             "transition_minutes": 45,
             "night_brightness_pct": 15,
             "day_max_cct": 5000,
+            "day_base_cct": 4000,
             "min_brightness": 6,
             "min_cct": 1800,
         }
@@ -59,6 +60,7 @@ def test_settings_from_options_parses_and_defaults():
     assert s.transition_lead_min == 45
     assert s.late_night_max_b_pct == 15.0
     assert s.max_cct_day == 5000
+    assert s.day_base_cct == 4000
     assert s.min_brightness == 6
     assert s.min_cct == 1800
 

@@ -85,19 +85,20 @@ def test_caps_at_noon_no_transitions():
 
 
 def test_caps_at_sunset_transition_start():
-    """30 minutes before sunset: cap is still 6500K (transition just starting)."""
+    """30 minutes before sunset: cap is at the daytime base (4500K), where the
+    arc shoulder hands off to the sunset transition."""
     now = _t(19, 30)
     sunset = _t(20)
     _, max_cct = compute_caps(now, next_sunset=sunset, is_day=True)
-    assert max_cct == 6500
+    assert max_cct == pytest.approx(4500, abs=10)
 
 
 def test_caps_at_sunset_transition_midpoint():
-    """15 minutes before sunset: cap should be midway between 6500 and 2700."""
+    """15 minutes before sunset: cap should be midway between 4500 and 2700."""
     now = _t(19, 45)
     sunset = _t(20)
     _, max_cct = compute_caps(now, next_sunset=sunset, is_day=True)
-    assert max_cct == pytest.approx(4600, abs=10)
+    assert max_cct == pytest.approx(3600, abs=10)
 
 
 def test_caps_at_sunset():
@@ -326,24 +327,86 @@ def test_custom_min_cct_sets_the_warm_floor():
 
 
 def test_presunrise_cct_ramps_up_before_sunrise():
-    """30 min before sunrise the color cap is still warm; it slides toward the
-    daytime max as sunrise approaches, instead of snapping cool at sunrise."""
+    """30 min before sunrise the color cap is still warm; it slides up to the
+    daytime base (4500K) by sunrise, where the day arc takes over."""
     sunrise = _t(6, 0)
     # 30 min before sunrise (start of ramp): warm.
     _, cct_start = compute_caps(
         _t(5, 30), next_sunset=None, is_day=False, next_sunrise=sunrise
     )
     assert cct_start == pytest.approx(2700, abs=20)
-    # 15 min before: roughly halfway to 6500.
+    # 15 min before: roughly halfway between 2700 and 4500.
     _, cct_mid = compute_caps(
         _t(5, 45), next_sunset=None, is_day=False, next_sunrise=sunrise
     )
-    assert cct_mid == pytest.approx(4600, abs=50)
-    # At sunrise: full daytime cap.
+    assert cct_mid == pytest.approx(3600, abs=50)
+    # At sunrise: the arc base.
     _, cct_end = compute_caps(
         _t(6, 0), next_sunset=None, is_day=False, next_sunrise=sunrise
     )
-    assert cct_end == pytest.approx(6500, abs=20)
+    assert cct_end == pytest.approx(4500, abs=20)
+
+
+# --- Daytime CCT arc ----------------------------------------------------------
+
+def _sunrise_today_via_next(hour: int, minute: int = 0) -> datetime:
+    """During daytime, code derives today's sunrise as next_sunrise - 1 day, so
+    pass tomorrow's sunrise to place today's at the given clock time."""
+    return _t(hour, minute) + timedelta(days=1)
+
+
+def test_day_arc_base_at_sunrise():
+    """At sunrise the arc sits at the base (4500K)."""
+    _, cct = compute_caps(
+        _t(6, 0),
+        next_sunset=_t(20, 0),
+        is_day=True,
+        next_sunrise=_sunrise_today_via_next(6, 0),
+    )
+    assert cct == pytest.approx(4500, abs=20)
+
+
+def test_day_arc_peaks_at_solar_noon():
+    """The arc reaches the peak (6500K) at the midpoint of [sunrise, sunset-lead].
+    For 06:00 sunrise and 20:00 sunset with a 30-min lead, that is 12:45."""
+    _, cct = compute_caps(
+        _t(12, 45),
+        next_sunset=_t(20, 0),
+        is_day=True,
+        next_sunrise=_sunrise_today_via_next(6, 0),
+    )
+    assert cct == pytest.approx(6500, abs=20)
+
+
+def test_day_arc_base_at_sunset_transition_start():
+    """The arc returns to the base where the sunset transition begins."""
+    _, cct = compute_caps(
+        _t(19, 30),
+        next_sunset=_t(20, 0),
+        is_day=True,
+        next_sunrise=_sunrise_today_via_next(6, 0),
+    )
+    assert cct == pytest.approx(4500, abs=20)
+
+
+def test_day_arc_always_moving_and_top_biased():
+    """The cap changes minute to minute, and the top-biased shape sits well above
+    the linear midpoint a quarter of the way through the day."""
+    sunrise_next = _sunrise_today_via_next(6, 0)
+    sunset = _t(20, 0)
+    _, c1 = compute_caps(_t(8, 0), next_sunset=sunset, is_day=True, next_sunrise=sunrise_next)
+    _, c2 = compute_caps(_t(8, 30), next_sunset=sunset, is_day=True, next_sunrise=sunrise_next)
+    assert c1 != c2 and c2 > c1  # rising toward noon, never static
+    # ~quarter through the window (09:22): top-biased, so already near the peak.
+    _, cq = compute_caps(_t(9, 22), next_sunset=sunset, is_day=True, next_sunrise=sunrise_next)
+    assert cq > 6000
+
+
+def test_day_arc_falls_back_to_flat_without_both_sun_events():
+    """With only sunset known, the daytime cap is the flat ceiling (the arc needs
+    both sunrise and sunset)."""
+    _, cct = compute_caps(_t(12, 0), next_sunset=_t(20, 0), is_day=True)
+    assert cct == 6500
 
 
 def test_default_floor_unchanged():
