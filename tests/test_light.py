@@ -32,7 +32,6 @@ from custom_components.circadian_oio.const import (  # noqa: E402
     MIN_BRIGHTNESS,
     MIN_CCT,
     MAX_CCT_DAY,
-    RENDER_TRANSITION_SECONDS,
     UPDATE_INTERVAL_SECONDS,
     USER_TRANSITION_SECONDS,
 )
@@ -157,11 +156,12 @@ async def test_turn_on_drives_underlying_with_brightness_and_cct(
     assert state.attributes["brightness"] == 200
 
 
-async def test_periodic_tick_uses_long_transition(
+async def test_user_action_is_instant_and_tick_skips_unchanged(
     hass, auto_enable_custom_integrations, oio_device
 ):
-    """The once-a-minute time-of-day re-render fades slowly; a user action does
-    not. This is the regression guard for the 'bulb lags the slider' bug."""
+    """A deliberate press is applied with no transition (instant). A following
+    periodic tick with an unchanged render sends nothing, so the Matter/Thread
+    network isn't flooded with identical re-renders."""
     device_id, underlying = oio_device
     await _setup_entry(hass, device_id)
     wrapper_id = _wrapper_entity_id(hass, device_id)
@@ -178,21 +178,23 @@ async def test_periodic_tick_uses_long_transition(
 
     hass.bus.async_listen("call_service", _record)
 
-    # User turns it on: fast fade.
+    # User turns it on: instant (zero transition), always sent.
     await hass.services.async_call(
         "light", "turn_on", {ATTR_ENTITY_ID: wrapper_id}, blocking=True
     )
     await hass.async_block_till_done()
-    assert downstream[-1]["transition"] == USER_TRANSITION_SECONDS
+    assert downstream, "user turn-on did not reach the bulb"
+    assert downstream[-1]["transition"] == USER_TRANSITION_SECONDS == 0
+    sent_after_on = len(downstream)
 
-    # Advance the clock past the update interval to fire the periodic tick.
+    # Fire the periodic tick almost immediately: the rendered value is unchanged,
+    # so the de-dup skips the redundant command.
     async_fire_time_changed(
         hass, dt_util.utcnow() + timedelta(seconds=UPDATE_INTERVAL_SECONDS + 1)
     )
     await hass.async_block_till_done()
 
-    assert len(downstream) >= 2, "periodic tick never re-rendered"
-    assert downstream[-1]["transition"] == RENDER_TRANSITION_SECONDS
+    assert len(downstream) == sent_after_on, "tick re-sent an unchanged command"
 
 
 async def test_state_attributes_are_published(

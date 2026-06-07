@@ -358,14 +358,21 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
                 self.async_write_ha_state()
 
         if self._is_on:
-            self.hass.async_create_task(self._apply(RENDER_TRANSITION_SECONDS))
+            # Periodic drift: skip the command when nothing actually changed, so
+            # we don't flood the Matter/Thread network with identical re-renders.
+            self.hass.async_create_task(
+                self._apply(RENDER_TRANSITION_SECONDS, force=False)
+            )
 
-    async def _apply(self, transition: float) -> None:
+    async def _apply(self, transition: float, force: bool = True) -> None:
         """Compute and push (brightness, CCT) to the underlying bulb.
 
         transition is the fade time handed to the underlying light: short for
         direct user actions, long (RENDER_TRANSITION_SECONDS) for the periodic
-        time-of-day re-render.
+        time-of-day re-render. When force is False (the periodic tick), the
+        Matter command is skipped if the rendered (brightness, CCT) is unchanged
+        since the last send, to keep network traffic down. Deliberate inputs use
+        force=True so a press always lands.
         """
         self._applying = True
         try:
@@ -384,30 +391,34 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
                 next_sunrise=next_sunrise,
             )
 
-            await self.hass.services.async_call(
-                "light",
-                "turn_on",
-                {
-                    "entity_id": self._underlying_entity_id,
-                    "brightness": brightness,
-                    "color_temp_kelvin": cct,
-                    "transition": transition,
-                },
-                blocking=False,
+            changed = (
+                brightness != self._rendered_brightness
+                or cct != self._rendered_cct
             )
+            if force or changed:
+                await self.hass.services.async_call(
+                    "light",
+                    "turn_on",
+                    {
+                        "entity_id": self._underlying_entity_id,
+                        "brightness": brightness,
+                        "color_temp_kelvin": cct,
+                        "transition": transition,
+                    },
+                    blocking=False,
+                )
+                _LOGGER.debug(
+                    "%s rendered intent=%.1f -> brightness=%d, cct=%dK on %s",
+                    self.entity_id,
+                    self._intent,
+                    brightness,
+                    cct,
+                    self._underlying_entity_id,
+                )
 
             self._rendered_brightness = brightness
             self._rendered_cct = cct
             self._update_attrs(now, next_sunset, next_sunrise, is_day)
-
-            _LOGGER.debug(
-                "%s rendered intent=%.1f -> brightness=%d, cct=%dK on %s",
-                self.entity_id,
-                self._intent,
-                brightness,
-                cct,
-                self._underlying_entity_id,
-            )
             self.async_write_ha_state()
         finally:
             self._applying = False
