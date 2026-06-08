@@ -7,8 +7,10 @@ from typing import Any
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
+    ATTR_TRANSITION,
     ColorMode,
     LightEntity,
+    LightEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OFF, STATE_ON
@@ -200,6 +202,7 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
     _attr_should_poll = False
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
     _attr_color_mode = ColorMode.BRIGHTNESS
+    _attr_supported_features = LightEntityFeature.TRANSITION
 
     def __init__(
         self,
@@ -227,6 +230,9 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         self._rendered_brightness: int | None = None
         self._rendered_cct: int | None = None
         self._attrs: dict[str, Any] = {}
+        # While a long, caller-requested fade is playing out, suppress the tick
+        # and state-change reactions so they don't cut it short. UTC end time.
+        self._fade_until: datetime | None = None
 
     # --- Lifecycle ------------------------------------------------------------
 
@@ -299,20 +305,38 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         if ATTR_BRIGHTNESS in kwargs:
             self._intent = (kwargs[ATTR_BRIGHTNESS] / 255.0) * 100.0
         self._is_on = True
-        # A direct user/script/voice change should track the control, not crawl
-        # in over the slow time-of-day transition.
-        await self._apply(USER_TRANSITION_SECONDS)
+        # Honor a caller-supplied transition (e.g. a 10-minute sunrise fade);
+        # otherwise apply instantly so a deliberate press tracks the control.
+        transition = float(kwargs.get(ATTR_TRANSITION, USER_TRANSITION_SECONDS))
+        self._arm_fade(transition)
+        await self._apply(transition)
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         self._is_on = False
+        data: dict[str, Any] = {"entity_id": self._underlying_entity_id}
+        if ATTR_TRANSITION in kwargs:
+            transition = float(kwargs[ATTR_TRANSITION])
+            data["transition"] = transition
+            self._arm_fade(transition)
+        else:
+            self._fade_until = None
         await self.hass.services.async_call(
-            "light",
-            "turn_off",
-            {"entity_id": self._underlying_entity_id},
-            blocking=False,
+            "light", "turn_off", data, blocking=False
         )
         self.async_write_ha_state()
+
+    def _arm_fade(self, transition: float) -> None:
+        """Suppress the tick and state reactions for the length of a long fade,
+        so a caller's slow transition isn't interrupted. Short transitions don't
+        need it — they finish before the next tick."""
+        if transition > UPDATE_INTERVAL_SECONDS:
+            self._fade_until = dt_util.utcnow() + timedelta(seconds=transition)
+        else:
+            self._fade_until = None
+
+    def _fading(self) -> bool:
+        return self._fade_until is not None and dt_util.utcnow() < self._fade_until
 
     # --- Render plumbing ------------------------------------------------------
 
@@ -322,7 +346,7 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         external control (Pico, group, scene, voice) gets an instant circadian
         render instead of waiting for the periodic tick. Guarded so the
         wrapper's own commands don't re-trigger it."""
-        if self._applying:
+        if self._applying or self._fading():
             return
         new_state = event.data.get("new_state")
         if new_state is None:
@@ -345,7 +369,7 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         outside the wrapper (voice, a scene, or the raw entity). Without this,
         the bulb only tracked time when the wrapper itself had turned it on.
         """
-        if self._applying:
+        if self._applying or self._fading():
             return
 
         underlying = self.hass.states.get(self._underlying_entity_id)

@@ -289,6 +289,38 @@ async def test_tick_adopts_externally_turned_on_bulb(
     assert rendered, "tick did not apply circadian render to the adopted bulb"
 
 
+async def test_turn_on_honors_caller_transition(
+    hass, auto_enable_custom_integrations, oio_device
+):
+    """A caller-supplied transition (e.g. a 10-minute sunrise fade) is passed
+    through to the bulb instead of being ignored."""
+    device_id, underlying = oio_device
+    await _setup_entry(hass, device_id)
+    wrapper_id = _wrapper_entity_id(hass, device_id)
+
+    sent: list[dict] = []
+
+    @callback
+    def _record(event):
+        data = event.data
+        if data.get("domain") == "light" and data.get("service") == "turn_on":
+            service_data = data.get("service_data", {})
+            if service_data.get(ATTR_ENTITY_ID) == underlying:
+                sent.append(service_data)
+
+    hass.bus.async_listen("call_service", _record)
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {ATTR_ENTITY_ID: wrapper_id, "brightness": 200, "transition": 600},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert sent, "wrapper did not drive the underlying"
+    assert sent[-1]["transition"] == 600
+
+
 async def test_turn_off_routes_to_underlying(
     hass, auto_enable_custom_integrations, oio_device
 ):

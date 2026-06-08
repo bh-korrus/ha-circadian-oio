@@ -278,6 +278,13 @@ ones depending on what triggered the render:
 - The 60-second time-of-day tick fades over 50 seconds, roughly matching the tick
   interval, so consecutive ticks chain into one continuous fade rather than
   visible once-a-minute steps.
+- A caller-supplied transition is honored. Calling `light.turn_on` (or off) with
+  a `transition` — say a 10-minute sunrise fade — passes that fade time straight
+  to the bulb, and for any transition longer than the tick interval the periodic
+  re-render and state reactions stand down for the duration so they don't cut the
+  fade short. The wrapper declares `LightEntityFeature.TRANSITION` so the option
+  is offered. The fade runs to the circadian target computed when it started;
+  normal time-of-day drift resumes once it finishes.
 
 Using the long fade for user actions was an early mistake — it made the bulb
 appear to lag the control — which is why the two paths are distinct, and why
