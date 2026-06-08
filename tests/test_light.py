@@ -28,6 +28,7 @@ from pytest_homeassistant_custom_component.common import (  # noqa: E402
 from custom_components.circadian_oio.const import (  # noqa: E402
     CONF_WRAPPED_DEVICES,
     DOMAIN,
+    FADE_STEP_SECONDS,
     MAX_BRIGHTNESS,
     MIN_BRIGHTNESS,
     MIN_CCT,
@@ -289,11 +290,13 @@ async def test_tick_adopts_externally_turned_on_bulb(
     assert rendered, "tick did not apply circadian render to the adopted bulb"
 
 
-async def test_turn_on_honors_caller_transition(
+async def test_long_transition_ramps_intent(
     hass, auto_enable_custom_integrations, oio_device
 ):
-    """A caller-supplied transition (e.g. a 10-minute sunrise fade) is passed
-    through to the bulb instead of being ignored."""
+    """A long transition (e.g. a 10-minute sunrise) ramps the entity's intent
+    over time, rendering each step — it does not snap to the target, and it does
+    not hand the raw 600s fade to the bulb. The circadian render keeps running on
+    the moving intent (each step uses the short step transition)."""
     device_id, underlying = oio_device
     await _setup_entry(hass, device_id)
     wrapper_id = _wrapper_entity_id(hass, device_id)
@@ -312,13 +315,19 @@ async def test_turn_on_honors_caller_transition(
     await hass.services.async_call(
         "light",
         "turn_on",
-        {ATTR_ENTITY_ID: wrapper_id, "brightness": 200, "transition": 600},
+        {ATTR_ENTITY_ID: wrapper_id, "brightness": 255, "transition": 600},
         blocking=True,
     )
     await hass.async_block_till_done()
 
-    assert sent, "wrapper did not drive the underlying"
-    assert sent[-1]["transition"] == 600
+    assert sent, "ramp did not start driving the bulb"
+    # Each step carries the short step transition, not the raw 600s.
+    assert sent[-1]["transition"] == FADE_STEP_SECONDS
+    # The intent ramps up from off, so the entity is near the bottom — not jumped
+    # straight to the 255 target.
+    state = hass.states.get(wrapper_id)
+    assert state.state == "on"
+    assert state.attributes["brightness"] < 64
 
 
 async def test_turn_off_routes_to_underlying(

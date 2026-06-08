@@ -278,13 +278,19 @@ ones depending on what triggered the render:
 - The 60-second time-of-day tick fades over 50 seconds, roughly matching the tick
   interval, so consecutive ticks chain into one continuous fade rather than
   visible once-a-minute steps.
-- A caller-supplied transition is honored. Calling `light.turn_on` (or off) with
-  a `transition` — say a 10-minute sunrise fade — passes that fade time straight
-  to the bulb, and for any transition longer than the tick interval the periodic
-  re-render and state reactions stand down for the duration so they don't cut the
-  fade short. The wrapper declares `LightEntityFeature.TRANSITION` so the option
-  is offered. The fade runs to the circadian target computed when it started;
-  normal time-of-day drift resumes once it finishes.
+- A caller-supplied transition is honored by ramping the intent. Calling
+  `light.turn_on` (or off) with a `transition` — say a 10-minute sunrise — does
+  not snap to the target or hand a raw 10-minute fade to the bulb. Instead the
+  wrapper ramps its intent (the user-facing percentage) from where it is to the
+  target linearly over the transition, re-rendering every few seconds. Each step
+  runs the full circadian logic on the current intent and the current time, so
+  the caps and the daytime color arc keep operating throughout the fade; the
+  circadian behavior is never paused. Because both the intent and the circadian
+  state move continuously, the output is continuous — there's no jump when the
+  fade ends (pausing the re-render, by contrast, would resume at a mismatched
+  value and cause a discontinuity). A fade-off ramps the intent down to zero and
+  then switches off. The wrapper declares `LightEntityFeature.TRANSITION` so the
+  option is offered.
 
 Using the long fade for user actions was an early mistake — it made the bulb
 appear to lag the control — which is why the two paths are distinct, and why

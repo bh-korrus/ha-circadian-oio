@@ -39,6 +39,7 @@ from .const import (
     DATA_HIDDEN,
     DAY_BASE_CCT,
     DOMAIN,
+    FADE_STEP_SECONDS,
     LATE_NIGHT_END_MIN,
     LATE_NIGHT_MAX_B_PCT,
     LATE_NIGHT_START_MIN,
@@ -230,9 +231,11 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         self._rendered_brightness: int | None = None
         self._rendered_cct: int | None = None
         self._attrs: dict[str, Any] = {}
-        # While a long, caller-requested fade is playing out, suppress the tick
-        # and state-change reactions so they don't cut it short. UTC end time.
-        self._fade_until: datetime | None = None
+        # An active intent ramp (caller-requested long transition), and the timer
+        # driving it. While a ramp runs, it re-renders every step so the circadian
+        # logic keeps operating on the moving intent.
+        self._fade: dict[str, Any] | None = None
+        self._fade_unsub = None
 
     # --- Lifecycle ------------------------------------------------------------
 
@@ -278,6 +281,8 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
                 self._underlying_changed,
             )
         )
+        # Stop any in-flight intent ramp when the entity goes away.
+        self.async_on_remove(self._cancel_fade)
 
         # Push the current intent to the bulb on startup (if on). Settle quickly
         # rather than crawling in over the long time-of-day transition.
@@ -302,41 +307,98 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         return self._attrs
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        was_on = self._is_on
+        target = self._intent
         if ATTR_BRIGHTNESS in kwargs:
-            self._intent = (kwargs[ATTR_BRIGHTNESS] / 255.0) * 100.0
+            target = (kwargs[ATTR_BRIGHTNESS] / 255.0) * 100.0
         self._is_on = True
-        # Honor a caller-supplied transition (e.g. a 10-minute sunrise fade);
-        # otherwise apply instantly so a deliberate press tracks the control.
         transition = float(kwargs.get(ATTR_TRANSITION, USER_TRANSITION_SECONDS))
-        self._arm_fade(transition)
-        await self._apply(transition)
+
+        if transition > FADE_STEP_SECONDS:
+            # Ramp the intent over the transition; the circadian render keeps
+            # running on the moving intent (a fade from off starts at 0).
+            self._begin_fade(self._intent if was_on else 0.0, target, transition)
+        else:
+            self._cancel_fade()
+            self._intent = target
+            await self._apply(transition)
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        transition = float(kwargs.get(ATTR_TRANSITION, 0.0))
+        if transition > FADE_STEP_SECONDS and self._is_on:
+            # Ramp the intent down to zero, then switch off at the end.
+            self._begin_fade(self._intent, 0.0, transition, then_off=True)
+            self.async_write_ha_state()
+            return
+
+        self._cancel_fade()
         self._is_on = False
-        data: dict[str, Any] = {"entity_id": self._underlying_entity_id}
-        if ATTR_TRANSITION in kwargs:
-            transition = float(kwargs[ATTR_TRANSITION])
-            data["transition"] = transition
-            self._arm_fade(transition)
-        else:
-            self._fade_until = None
         await self.hass.services.async_call(
-            "light", "turn_off", data, blocking=False
+            "light",
+            "turn_off",
+            {"entity_id": self._underlying_entity_id},
+            blocking=False,
         )
         self.async_write_ha_state()
 
-    def _arm_fade(self, transition: float) -> None:
-        """Suppress the tick and state reactions for the length of a long fade,
-        so a caller's slow transition isn't interrupted. Short transitions don't
-        need it — they finish before the next tick."""
-        if transition > UPDATE_INTERVAL_SECONDS:
-            self._fade_until = dt_util.utcnow() + timedelta(seconds=transition)
-        else:
-            self._fade_until = None
+    # --- Intent ramp (caller transitions) -------------------------------------
 
-    def _fading(self) -> bool:
-        return self._fade_until is not None and dt_util.utcnow() < self._fade_until
+    def _begin_fade(
+        self, start: float, target: float, duration: float, then_off: bool = False
+    ) -> None:
+        self._fade = {
+            "start": start,
+            "target": target,
+            "dur": duration,
+            "t0": dt_util.utcnow(),
+            "then_off": then_off,
+        }
+        if self._fade_unsub is None:
+            self._fade_unsub = async_track_time_interval(
+                self.hass, self._fade_tick, timedelta(seconds=FADE_STEP_SECONDS)
+            )
+        self.hass.async_create_task(self._advance_fade())
+
+    def _cancel_fade(self) -> None:
+        self._fade = None
+        if self._fade_unsub is not None:
+            self._fade_unsub()
+            self._fade_unsub = None
+
+    @callback
+    def _fade_tick(self, _now) -> None:
+        if self._fade is not None and not self._applying:
+            self.hass.async_create_task(self._advance_fade())
+
+    async def _advance_fade(self) -> None:
+        """One step of an intent ramp: move the intent toward the target and
+        render it. The circadian caps/color apply at the current intent, so the
+        fade and the circadian behavior stay continuous together."""
+        fade = self._fade
+        if fade is None:
+            return
+        elapsed = (dt_util.utcnow() - fade["t0"]).total_seconds()
+        frac = 1.0 if fade["dur"] <= 0 else min(1.0, elapsed / fade["dur"])
+        self._intent = fade["start"] + frac * (fade["target"] - fade["start"])
+
+        if frac >= 1.0 and fade["then_off"]:
+            self._cancel_fade()
+            self._is_on = False
+            await self.hass.services.async_call(
+                "light",
+                "turn_off",
+                {"entity_id": self._underlying_entity_id},
+                blocking=False,
+            )
+            self.async_write_ha_state()
+            return
+
+        await self._apply(FADE_STEP_SECONDS)
+        self.async_write_ha_state()
+        if frac >= 1.0:
+            self._intent = fade["target"]
+            self._cancel_fade()
 
     # --- Render plumbing ------------------------------------------------------
 
@@ -346,7 +408,7 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         external control (Pico, group, scene, voice) gets an instant circadian
         render instead of waiting for the periodic tick. Guarded so the
         wrapper's own commands don't re-trigger it."""
-        if self._applying or self._fading():
+        if self._applying or self._fade is not None:
             return
         new_state = event.data.get("new_state")
         if new_state is None:
@@ -369,7 +431,9 @@ class CircadianOIOLight(LightEntity, RestoreEntity):
         outside the wrapper (voice, a scene, or the raw entity). Without this,
         the bulb only tracked time when the wrapper itself had turned it on.
         """
-        if self._applying or self._fading():
+        # While a ramp is running, its own step timer drives the renders (the
+        # circadian logic still operates there), so the slow tick stands aside.
+        if self._applying or self._fade is not None:
             return
 
         underlying = self.hass.states.get(self._underlying_entity_id)

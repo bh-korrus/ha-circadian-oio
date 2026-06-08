@@ -105,6 +105,12 @@ RENDER_TRANSITION_SECONDS = 50
 # the slow, smooth fade is reserved for the unattended time-of-day drift.
 USER_TRANSITION_SECONDS = 0
 
+# When a caller requests a transition longer than this, the wrapper ramps its
+# intent over the transition instead of snapping, re-rendering every step so the
+# circadian logic keeps operating on the moving intent. Each step is sent with
+# this fade time so the bulb interpolates smoothly between steps.
+FADE_STEP_SECONDS = 5
+
 # Where in the intent space [0-100] each phase lives. Phase A is the sub-curve
 # CCT-only walk below the brightness floor; Phase B is the brightness ramp with
 # curve-tracking CCT; Phase C is the optional super-curve CCT-only walk above
